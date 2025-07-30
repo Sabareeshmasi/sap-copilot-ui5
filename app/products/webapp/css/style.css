@@ -1,0 +1,41 @@
+.floating-chat-toggle {
+    position: fixed;
+    bottom: 20px;
+    right: 30px;
+    z-index: 1001;
+    background-color: #0070f2;
+    color: white;
+  }
+  
+  .chat-shell {
+    position: fixed;
+    bottom: 70px;
+    right: 30px;
+    width: 360px;
+    max-height: 450px;
+    background: white;
+    border: 1px solid #ccc;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+    z-index: 1000;
+    padding: 1rem;
+    border-radius: 8px;
+    overflow: auto;
+  }
+  .chat-shell .chat-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .chat-shell .chat-input {
+    display: flex;
+    margin-top: 1rem;
+    gap: 0.5rem;
+  }
+  .chat-shell .chat-message {
+    padding: 0.3rem;
+    border-bottom: 1px solid #eee;
+  }
+  .chat-shell .sender {
+    font-weight: bold;
+  }
+  

@@ -1,0 +1,47 @@
+<mvc:View
+  controllerName="sap.copilot.products.controller.View1"
+  xmlns:mvc="sap.ui.core.mvc"
+  xmlns="sap.m"
+  xmlns:core="sap.ui.core">
+
+  <Page id="page" title="Product List">
+    <content>
+      <VBox id="mainVBox" class="sapUiSmallMargin">
+        <!-- Search Bar -->
+        <SearchField
+          id="productSearch"
+          placeholder="Search by Product Name"
+          search=".onSearch" />
+
+        <!-- Product Table -->
+        <Table id="productTable" items="{path: '/Products'}">
+          <columns>
+            <Column id="_IDGenColumn"><Text id="_IDGenText" text="ID" /></Column>
+            <Column id="_IDGenColumn1"><Text id="_IDGenText1" text="Product Name" /></Column>
+            <Column id="_IDGenColumn2"><Text id="_IDGenText2" text="Unit Price" /></Column>
+          </columns>
+          <items>
+            <ColumnListItem id="_IDGenColumnListItem1">
+              <cells>
+                <Text id="_IDGenText3" text="{ID}" />
+                <Text id="_IDGenText4" text="{ProductName}" />
+                <Text id="_IDGenText5" text="{UnitPrice}" />
+              </cells>
+            </ColumnListItem>
+          </items>
+        </Table>
+      </VBox>
+
+      <!-- Floating ChatShell Button -->
+      <Button
+        id="copilotToggleBtn"
+        icon="sap-icon://sys-enter-2"
+        tooltip="Open Copilot"
+        press=".onToggleChat"
+        class="floating-chat-toggle" />
+
+      <!-- ChatShell Placeholder -->
+      <core:HTML id="chatShellContainer" content="" />
+    </content>
+  </Page>
+</mvc:View>

@@ -1,0 +1,1 @@
+using NorthwindService as service from '../../srv/northwind-service';

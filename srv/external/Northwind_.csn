@@ -1,0 +1,33 @@
+{
+    "$version": "2.0",
+    "definitions": {
+      "external.Products": {
+        "kind": "entity",
+        "elements": {
+          "ID": { "type": "cds.String", "key": true },
+          "ProductName": { "type": "cds.String" },
+          "QuantityPerUnit": { "type": "cds.String" },
+          "UnitPrice": { "type": "cds.Decimal" }
+        }
+      },
+      "external.Customers": {
+        "kind": "entity",
+        "elements": {
+          "ID": { "type": "cds.String", "key": true },
+          "CompanyName": { "type": "cds.String" },
+          "ContactName": { "type": "cds.String" },
+          "Country": { "type": "cds.String" }
+        }
+      },
+      "external.Orders": {
+        "kind": "entity",
+        "elements": {
+          "ID": { "type": "cds.String", "key": true },
+          "CustomerID": { "type": "cds.String" },
+          "OrderDate": { "type": "cds.Date" },
+          "ShipCountry": { "type": "cds.String" }
+        }
+      }
+    }
+  }
+  
