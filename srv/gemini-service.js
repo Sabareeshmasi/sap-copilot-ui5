@@ -3,6 +3,8 @@ const axios = require("axios");
 const IntentRecognizer = require("./ai/intent-recognition");
 const ODataParser = require("./ai/odata-parser");
 const BusinessContextResolver = require("./ai/business-context");
+const ReportGenerator = require("./reporting/report-generator");
+const AlertManager = require("./alerts/alert-manager");
 
 // Cohere AI configuration
 const COHERE_URL = "https://api.cohere.ai/v1/chat";
@@ -32,14 +34,42 @@ function sanitizePrompt(prompt) {
 
 module.exports = cds.service.impl(async function () {
 
+  // Initialize report generator
+  const reportGenerator = new ReportGenerator();
+
+  // Initialize alert manager
+  const alertManager = new AlertManager();
+
   // Log service initialization
   console.log("🤖 Cohere AI Service initialized");
+  console.log("📊 Report Generator initialized");
+  console.log("🚨 Alert Manager initialized");
   if (!COHERE_KEY) {
     console.warn("⚠️  COHERE_API_KEY not configured - AI service will use intelligent fallbacks");
   } else {
     console.log("✅ COHERE_API_KEY found:", COHERE_KEY.substring(0, 10) + "...");
     console.log("🔗 Cohere URL:", COHERE_URL);
   }
+
+  // Initialize alert manager
+  alertManager.initialize().catch(error => {
+    console.error("❌ Failed to initialize Alert Manager:", error);
+  });
+
+  // Setup real-time notification broadcasting
+  alertManager.on('in-app-notification', (notification) => {
+    if (global.notificationIO) {
+      global.notificationIO.emit('new-notification', notification);
+      console.log(`📡 Broadcasted notification: ${notification.title}`);
+    }
+  });
+
+  alertManager.on('alert-triggered', (alert) => {
+    if (global.notificationIO) {
+      global.notificationIO.emit('alert-triggered', alert);
+      console.log(`📡 Broadcasted alert: ${alert.message}`);
+    }
+  });
 
 
 
@@ -67,10 +97,38 @@ module.exports = cds.service.impl(async function () {
       try {
         analysis = IntentRecognizer.analyzeInput(rawPrompt);
         console.log(`📊 Intent: ${analysis.intent.intent} (${Math.round(analysis.intent.confidence * 100)}%)`);
+        console.log(`🔍 Full analysis:`, JSON.stringify(analysis, null, 2));
       } catch (intentError) {
         console.error("❌ Error in intent recognition:", intentError);
         // Fall back to simple Gemini AI response
         return await this.handleGeneralQuery(rawPrompt, null, startTime);
+      }
+
+      // Direct transaction detection for testing (bypass AI intent if obvious)
+      const lowerPrompt = rawPrompt.toLowerCase();
+      if (lowerPrompt.startsWith('create ') || lowerPrompt.startsWith('add ') ||
+          lowerPrompt.startsWith('update ') || lowerPrompt.startsWith('modify ') ||
+          lowerPrompt.startsWith('delete ') || lowerPrompt.startsWith('remove ')) {
+        console.log(`🚀 Direct transaction detected, bypassing AI intent`);
+        return await this.handleDirectTransaction(rawPrompt, startTime);
+      }
+
+      // Handle casual chat without heavy AI processing
+      if (this.isCasualChat(rawPrompt)) {
+        console.log(`💬 Casual chat detected, using simple response`);
+        return this.handleCasualChat(rawPrompt, startTime);
+      }
+
+      // Handle reporting requests
+      if (this.isReportingRequest(rawPrompt, analysis)) {
+        console.log(`📊 Reporting request detected`);
+        return await this.handleReportingRequest(rawPrompt, analysis, startTime);
+      }
+
+      // Handle alert requests
+      if (this.isAlertRequest(rawPrompt, analysis)) {
+        console.log(`🚨 Alert request detected`);
+        return await this.handleAlertRequest(rawPrompt, analysis, startTime);
       }
 
       // Handle ALL queries with AI - provide relevant data as context
@@ -285,6 +343,15 @@ Ready to help! What would you like to explore?
     try {
       console.log(`🌟 Universal AI processing: "${prompt}"`);
 
+      // Check if this is a transaction operation first
+      const isTransaction = analysis && this.isTransactionOperation(prompt, analysis);
+      console.log(`🔍 Transaction check: isTransaction=${isTransaction}, intent=${analysis?.intent?.intent}, confidence=${analysis?.intent?.confidence}`);
+
+      if (isTransaction) {
+        console.log(`💼 Detected transaction operation`);
+        return await this.handleTransactionOperation(prompt, analysis, startTime);
+      }
+
       // Get relevant business data based on the query
       const contextData = await this.getRelevantBusinessData(prompt);
 
@@ -306,6 +373,7 @@ INSTRUCTIONS:
 - For comparisons, provide detailed analysis with specific data points
 - For recommendations, use actual inventory levels and business logic
 - For general questions, provide professional business insights
+- For transaction requests, guide users on proper syntax and requirements
 - Always be helpful, accurate, and business-focused
 - Format responses clearly with emojis and structure for readability
 
@@ -329,7 +397,7 @@ RESPONSE:`;
           temperature: 0.7
         },
         {
-          timeout: 30000,
+          timeout: 10000, // Reduced from 30s to 10s
           headers: {
             'Authorization': `Bearer ${COHERE_KEY}`,
             'Content-Type': 'application/json',
@@ -508,8 +576,40 @@ RESPONSE:`;
    * Check if query is about products
    */
   this.isProductQuery = function(prompt) {
-    const productKeywords = ['product', 'products', 'item', 'items', 'show', 'list', 'display'];
-    return productKeywords.some(keyword => prompt.toLowerCase().includes(keyword));
+    const lowerPrompt = prompt.toLowerCase();
+
+    // Direct product keywords
+    const productKeywords = ['product', 'products', 'item', 'items'];
+    const hasProductKeywords = productKeywords.some(keyword => lowerPrompt.includes(keyword));
+
+    // Action keywords for data queries
+    const actionKeywords = ['show', 'list', 'display', 'find', 'get', 'view'];
+    const hasActionKeywords = actionKeywords.some(keyword => lowerPrompt.includes(keyword));
+
+    // Stock/inventory specific patterns
+    const stockPatterns = [
+      /stock\s*(below|under|less than|<)\s*(\d+)/i,
+      /stock\s*(above|over|greater than|>)\s*(\d+)/i,
+      /stock\s*(equals?|=)\s*(\d+)/i,
+      /low\s*stock/i,
+      /out\s*of\s*stock/i,
+      /inventory\s*(below|under|above|over)/i
+    ];
+
+    const hasStockPatterns = stockPatterns.some(pattern => pattern.test(prompt));
+
+    // Price patterns
+    const pricePatterns = [
+      /price\s*(below|under|less than|<)\s*(\d+)/i,
+      /price\s*(above|over|greater than|>)\s*(\d+)/i,
+      /expensive/i,
+      /cheap/i,
+      /cost/i
+    ];
+
+    const hasPricePatterns = pricePatterns.some(pattern => pattern.test(prompt));
+
+    return hasProductKeywords || (hasActionKeywords && (hasStockPatterns || hasPricePatterns)) || hasStockPatterns;
   };
 
   /**
@@ -518,6 +618,466 @@ RESPONSE:`;
   this.isCustomerQuery = function(prompt) {
     const customerKeywords = ['customer', 'customers', 'client', 'clients'];
     return customerKeywords.some(keyword => prompt.toLowerCase().includes(keyword));
+  };
+
+  /**
+   * Check if this is casual chat
+   */
+  this.isCasualChat = function(prompt) {
+    const casualPhrases = [
+      'all good', 'ok', 'okay', 'thanks', 'thank you', 'bye', 'goodbye',
+      'cool', 'nice', 'great', 'awesome', 'perfect', 'excellent',
+      'got it', 'understood', 'alright', 'fine', 'good', 'yes', 'no',
+      'sure', 'yep', 'nope', 'right', 'correct'
+    ];
+
+    const lowerPrompt = prompt.toLowerCase().trim();
+    return casualPhrases.includes(lowerPrompt) || lowerPrompt.length < 10;
+  };
+
+  /**
+   * Handle casual chat responses
+   */
+  this.handleCasualChat = function(prompt, startTime) {
+    const lowerPrompt = prompt.toLowerCase().trim();
+    let reply = "";
+
+    if (lowerPrompt.includes('good') || lowerPrompt.includes('great') || lowerPrompt.includes('perfect')) {
+      reply = "Great! I'm glad everything is working well. Is there anything else you'd like to do with your business data?";
+    } else if (lowerPrompt.includes('thank') || lowerPrompt.includes('thanks')) {
+      reply = "You're welcome! I'm here whenever you need help with your business operations.";
+    } else if (lowerPrompt.includes('bye') || lowerPrompt.includes('goodbye')) {
+      reply = "Goodbye! Feel free to come back anytime for business assistance.";
+    } else if (lowerPrompt.includes('ok') || lowerPrompt.includes('okay') || lowerPrompt.includes('alright')) {
+      reply = "👍 Understood! Let me know if you need help with products, customers, or any business operations.";
+    } else {
+      reply = "I'm here to help with your business operations! Try asking me about products, customers, or any transactions you need to perform.";
+    }
+
+    return {
+      reply: reply,
+      success: true,
+      timestamp: new Date().toISOString(),
+      processingTime: Date.now() - startTime,
+      type: "casual_chat"
+    };
+  };
+
+  /**
+   * Check if this is an alert request
+   */
+  this.isAlertRequest = function(prompt, analysis) {
+    const lowerPrompt = prompt.toLowerCase();
+
+    // Check for explicit alert keywords
+    const alertKeywords = [
+      'notify', 'alert', 'warn', 'notification', 'monitor', 'watch',
+      'threshold', 'trigger', 'alarm', 'reminder', 'check'
+    ];
+
+    const hasAlertKeywords = alertKeywords.some(keyword => lowerPrompt.includes(keyword));
+
+    // Check for alert patterns
+    const alertPatterns = [
+      /notify.*when/i,
+      /alert.*if/i,
+      /warn.*when/i,
+      /monitor.*for/i,
+      /watch.*for/i,
+      /set.*alert/i,
+      /create.*notification/i,
+      /threshold.*for/i
+    ];
+
+    const hasAlertPatterns = alertPatterns.some(pattern => pattern.test(prompt));
+
+    // Check intent analysis
+    const isAlertIntent = analysis &&
+      (analysis.intent.intent === 'ALERT_REQUEST' || analysis.intent.intent === 'NOTIFICATION_REQUEST') &&
+      analysis.intent.confidence > 0.5;
+
+    console.log(`🔍 Alert detection: keywords=${hasAlertKeywords}, patterns=${hasAlertPatterns}, intent=${analysis?.intent?.intent}`);
+
+    return hasAlertKeywords || hasAlertPatterns || isAlertIntent;
+  };
+
+  /**
+   * Handle alert requests
+   */
+  this.handleAlertRequest = async function(prompt, analysis, startTime) {
+    try {
+      console.log(`🚨 Processing alert request: "${prompt}"`);
+
+      // Check if this is a status/info request
+      if (this.isAlertStatusRequest(prompt)) {
+        return await this.handleAlertStatusRequest(prompt, startTime);
+      }
+
+      // Check if this is an alert management request
+      if (this.isAlertManagementRequest(prompt)) {
+        return await this.handleAlertManagementRequest(prompt, startTime);
+      }
+
+      // Otherwise, try to create a new alert rule
+      const result = await alertManager.createAlertFromNaturalLanguage(prompt);
+
+      let reply = '';
+      if (result.success) {
+        reply = `✅ **Alert Created Successfully!**\n\n`;
+        reply += `🚨 **Alert Rule:** ${result.rule.name}\n`;
+        reply += `📋 **Description:** ${result.description}\n`;
+        reply += `⚡ **Priority:** ${result.rule.priority.toUpperCase()}\n`;
+        reply += `📢 **Channels:** ${result.rule.channels.join(', ')}\n`;
+        reply += `🎯 **Threshold:** ${result.rule.threshold}\n\n`;
+        reply += `🔍 **Monitoring:** This alert is now active and will monitor your business data.\n`;
+        reply += `📊 **Status:** You can check alert status with "show alert status"\n\n`;
+        reply += `💡 **Test Alert:** Try "check alerts now" to trigger immediate checking`;
+      } else {
+        reply = `❌ **Alert Creation Failed**\n\n`;
+        reply += `**Issue:** ${result.message}\n\n`;
+        reply += `💡 **Try these examples:**\n`;
+        result.suggestions?.forEach(suggestion => {
+          reply += `• "${suggestion}"\n`;
+        });
+      }
+
+      return {
+        reply: reply,
+        success: result.success,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime,
+        data: result.rule || null,
+        type: result.success ? "alert_created" : "alert_error"
+      };
+
+    } catch (error) {
+      console.error("❌ Error in alert request:", error);
+      return {
+        reply: `Alert processing failed: ${error.message}. Please try again with a simpler alert request.`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
+   * Check if this is an alert status request
+   */
+  this.isAlertStatusRequest = function(prompt) {
+    const lowerPrompt = prompt.toLowerCase();
+    return lowerPrompt.includes('alert status') ||
+           lowerPrompt.includes('show alerts') ||
+           lowerPrompt.includes('list alerts') ||
+           lowerPrompt.includes('alert summary') ||
+           lowerPrompt.includes('notification status');
+  };
+
+  /**
+   * Handle alert status requests
+   */
+  this.handleAlertStatusRequest = async function(prompt, startTime) {
+    try {
+      const status = alertManager.getSystemStatus();
+      const activity = alertManager.getRecentActivity(5);
+
+      let reply = `📊 **Alert System Status**\n\n`;
+
+      // System status
+      reply += `🔧 **System Status:**\n`;
+      reply += `• **Monitoring:** ${status.monitoring ? '✅ Active' : '❌ Inactive'}\n`;
+      reply += `• **Total Rules:** ${status.alertEngine.totalRules}\n`;
+      reply += `• **Active Rules:** ${status.alertEngine.enabledRules}\n`;
+      reply += `• **Total Alerts:** ${status.alertEngine.totalAlerts}\n`;
+      reply += `• **Unacknowledged:** ${status.alertEngine.unacknowledgedAlerts}\n\n`;
+
+      // Recent alerts
+      if (activity.alerts.length > 0) {
+        reply += `🚨 **Recent Alerts:**\n`;
+        activity.alerts.slice(0, 3).forEach(alert => {
+          const timeAgo = this.getTimeAgo(alert.timestamp);
+          const status = alert.acknowledged ? '✅' : '⚠️';
+          reply += `• ${status} ${alert.message} (${timeAgo})\n`;
+        });
+        reply += `\n`;
+      }
+
+      // Notification stats
+      reply += `📧 **Notifications:**\n`;
+      reply += `• **In-App:** ${status.notifications.inApp} (${status.notifications.unread} unread)\n`;
+      reply += `• **Email Sent:** ${status.notifications.channels.email || 0}\n`;
+      reply += `• **SMS Sent:** ${status.notifications.channels.sms || 0}\n\n`;
+
+      // Recipients
+      reply += `👥 **Recipients:**\n`;
+      reply += `• **Email:** ${status.recipients.email} configured\n`;
+      reply += `• **Phone:** ${status.recipients.phone} configured\n\n`;
+
+      reply += `💡 **Commands:** "create alert", "check alerts now", "show alert rules"`;
+
+      return {
+        reply: reply,
+        success: true,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime,
+        data: { status, activity },
+        type: "alert_status"
+      };
+
+    } catch (error) {
+      console.error("❌ Error getting alert status:", error);
+      return {
+        reply: `Failed to get alert status: ${error.message}`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
+   * Check if this is an alert management request
+   */
+  this.isAlertManagementRequest = function(prompt) {
+    const lowerPrompt = prompt.toLowerCase();
+    return lowerPrompt.includes('check alerts now') ||
+           lowerPrompt.includes('trigger alerts') ||
+           lowerPrompt.includes('test alerts') ||
+           lowerPrompt.includes('show alert rules') ||
+           lowerPrompt.includes('list alert rules');
+  };
+
+  /**
+   * Handle alert management requests
+   */
+  this.handleAlertManagementRequest = async function(prompt, startTime) {
+    try {
+      const lowerPrompt = prompt.toLowerCase();
+
+      if (lowerPrompt.includes('check alerts now') || lowerPrompt.includes('trigger alerts') || lowerPrompt.includes('test alerts')) {
+        // Manual alert check
+        const result = await alertManager.checkAlertsNow();
+
+        return {
+          reply: `🔍 **Manual Alert Check Completed**\n\nAll alert rules have been checked against current business data. Any triggered alerts will appear in your notifications.`,
+          success: true,
+          timestamp: new Date().toISOString(),
+          processingTime: Date.now() - startTime,
+          type: "alert_check"
+        };
+      }
+
+      if (lowerPrompt.includes('show alert rules') || lowerPrompt.includes('list alert rules')) {
+        // Show all alert rules
+        const rules = alertManager.getAllAlertRules();
+
+        let reply = `📋 **Alert Rules (${rules.length} total)**\n\n`;
+
+        rules.forEach(rule => {
+          const status = rule.enabled ? '✅' : '❌';
+          const priority = rule.priority.toUpperCase();
+          reply += `${status} **${rule.name}** (${priority})\n`;
+          reply += `   📝 ${rule.description}\n`;
+          reply += `   🎯 Threshold: ${rule.threshold}\n`;
+          reply += `   📢 Channels: ${rule.channels.join(', ')}\n`;
+          if (rule.lastTriggered) {
+            reply += `   ⏰ Last triggered: ${this.getTimeAgo(rule.lastTriggered)}\n`;
+          }
+          reply += `\n`;
+        });
+
+        return {
+          reply: reply,
+          success: true,
+          timestamp: new Date().toISOString(),
+          processingTime: Date.now() - startTime,
+          data: rules,
+          type: "alert_rules"
+        };
+      }
+
+      return {
+        reply: `Alert management command not recognized. Try: "check alerts now" or "show alert rules"`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+
+    } catch (error) {
+      console.error("❌ Error in alert management:", error);
+      return {
+        reply: `Alert management failed: ${error.message}`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
+   * Get time ago string
+   */
+  this.getTimeAgo = function(timestamp) {
+    const now = new Date();
+    const time = new Date(timestamp);
+    const diffMs = now - time;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${diffDays}d ago`;
+  };
+
+  /**
+   * Check if this is a reporting request
+   */
+  this.isReportingRequest = function(prompt, analysis) {
+    const lowerPrompt = prompt.toLowerCase();
+
+    // Check for explicit reporting keywords
+    const reportingKeywords = [
+      'report', 'export', 'download', 'generate', 'pdf', 'excel', 'xlsx',
+      'summary', 'analysis', 'statistics', 'chart', 'graph'
+    ];
+
+    const hasReportingKeywords = reportingKeywords.some(keyword => lowerPrompt.includes(keyword));
+
+    // Check intent analysis
+    const isReportIntent = analysis &&
+      (analysis.intent.intent === 'REPORT_REQUEST' || analysis.intent.intent === 'REPORT_GENERATION') &&
+      analysis.intent.confidence > 0.5;
+
+    console.log(`🔍 Reporting detection: keywords=${hasReportingKeywords}, intent=${analysis?.intent?.intent}, confidence=${analysis?.intent?.confidence}`);
+
+    return hasReportingKeywords || isReportIntent;
+  };
+
+  /**
+   * Handle reporting requests
+   */
+  this.handleReportingRequest = async function(prompt, analysis, startTime) {
+    try {
+      console.log(`📊 Processing reporting request: "${prompt}"`);
+
+      // Parse the reporting request
+      const reportRequest = this.parseReportRequest(prompt);
+
+      if (!reportRequest.success) {
+        return {
+          reply: reportRequest.error || "I couldn't understand your report request. Try: 'Export products as PDF' or 'Download inventory report as Excel'",
+          success: false,
+          timestamp: new Date().toISOString(),
+          processingTime: Date.now() - startTime
+        };
+      }
+
+      // Get the data for the report
+      const reportData = await this.getReportData(reportRequest.dataType);
+
+      if (!reportData.success) {
+        return {
+          reply: `Failed to get data for ${reportRequest.dataType} report: ${reportData.error}`,
+          success: false,
+          timestamp: new Date().toISOString(),
+          processingTime: Date.now() - startTime
+        };
+      }
+
+      // Generate the report
+      let reportResult;
+      if (reportRequest.format === 'pdf') {
+        reportResult = await reportGenerator.generatePDFReport(
+          reportData.data,
+          reportRequest.dataType,
+          reportRequest.title
+        );
+      } else if (reportRequest.format === 'excel') {
+        reportResult = await reportGenerator.generateExcelReport(
+          reportData.data,
+          reportRequest.dataType,
+          reportRequest.title
+        );
+      } else {
+        return {
+          reply: `Report format '${reportRequest.format}' is not supported. Available formats: PDF, Excel`,
+          success: false,
+          timestamp: new Date().toISOString(),
+          processingTime: Date.now() - startTime
+        };
+      }
+
+      // Generate summary statistics
+      const stats = reportGenerator.generateSummaryStats(reportData.data, reportRequest.dataType);
+
+      // Create response
+      let reply = `✅ **Report Generated Successfully!**\n\n`;
+      reply += `📊 **Report Details:**\n`;
+      reply += `• **Type**: ${reportRequest.title}\n`;
+      reply += `• **Format**: ${reportRequest.format.toUpperCase()}\n`;
+      reply += `• **Records**: ${reportData.data.length}\n`;
+      reply += `• **File**: ${reportResult.fileName}\n\n`;
+
+      // Add summary statistics
+      if (stats && Object.keys(stats).length > 0) {
+        reply += `📈 **Summary Statistics:**\n`;
+        Object.entries(stats).forEach(([key, value]) => {
+          const displayKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+          reply += `• **${displayKey}**: ${value}\n`;
+        });
+        reply += `\n`;
+      }
+
+      reply += `💾 **Download**: The report has been generated and is ready for download.\n`;
+      reply += `🔗 **Direct Download**: http://localhost:4004/download/${reportResult.fileName}\n`;
+      reply += `📁 **File Location**: ${reportResult.downloadUrl}`;
+
+      return {
+        reply: reply,
+        success: true,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime,
+        data: {
+          reportFile: reportResult,
+          statistics: stats,
+          recordCount: reportData.data.length
+        },
+        type: "report_generated"
+      };
+
+    } catch (error) {
+      console.error("❌ Error in reporting request:", error);
+      return {
+        reply: `Report generation failed: ${error.message}. Please try again or contact support.`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
+   * Check if query is a transaction operation
+   */
+  this.isTransactionOperation = function(prompt, analysis) {
+    if (!analysis || !analysis.intent) return false;
+
+    const transactionIntents = ['CREATE_OPERATION', 'UPDATE_OPERATION', 'DELETE_OPERATION'];
+    const isTransactionIntent = transactionIntents.includes(analysis.intent.intent);
+    const hasGoodConfidence = analysis.intent.confidence > 0.5; // Lowered threshold
+
+    // Also check for explicit transaction keywords in the prompt
+    const lowerPrompt = prompt.toLowerCase();
+    const hasTransactionKeywords =
+      lowerPrompt.includes('create') || lowerPrompt.includes('add') || lowerPrompt.includes('new') ||
+      lowerPrompt.includes('update') || lowerPrompt.includes('modify') || lowerPrompt.includes('change') ||
+      lowerPrompt.includes('delete') || lowerPrompt.includes('remove') || lowerPrompt.includes('cancel');
+
+    console.log(`🔍 Transaction detection: intent=${analysis.intent.intent}, confidence=${analysis.intent.confidence}, hasKeywords=${hasTransactionKeywords}`);
+
+    return (isTransactionIntent && hasGoodConfidence) || hasTransactionKeywords;
   };
 
   /**
@@ -592,38 +1152,108 @@ RESPONSE:`;
       const db = await cds.connect.to('db');
       const { Products } = db.entities;
 
+      console.log(`🔍 Processing product query: "${prompt}"`);
+
       // Check for specific product ID
       const productIds = this.extractProductIds(prompt);
+
+      // Check for stock-based queries
+      const stockQuery = this.parseStockQuery(prompt);
+
+      // Check for price-based queries
+      const priceQuery = this.parsePriceQuery(prompt);
+
       let query;
+      let queryDescription = "";
 
       if (productIds.length > 0) {
-        console.log(`🔍 Looking for specific products: ${productIds.join(', ')}`);
+        console.log(`🎯 Looking for specific products: ${productIds.join(', ')}`);
         query = SELECT.from(Products).where({ ID: { in: productIds } });
+        queryDescription = `Products with IDs: ${productIds.join(', ')}`;
+      } else if (stockQuery.isStockQuery) {
+        console.log(`📦 Stock-based query: ${stockQuery.condition} ${stockQuery.threshold}`);
+        query = this.buildStockQuery(Products, stockQuery);
+        queryDescription = `Products with stock ${stockQuery.condition} ${stockQuery.threshold} units`;
+      } else if (priceQuery.isPriceQuery) {
+        console.log(`💰 Price-based query: ${priceQuery.condition} ${priceQuery.threshold}`);
+        query = this.buildPriceQuery(Products, priceQuery);
+        queryDescription = `Products with price ${priceQuery.condition} $${priceQuery.threshold}`;
       } else {
-        query = SELECT.from(Products).limit(10); // Show first 10 products
+        // Default: show all products (limited)
+        query = SELECT.from(Products).limit(10);
+        queryDescription = "All products (showing first 10)";
       }
 
       const products = await db.run(query);
 
       if (products.length === 0) {
         return {
-          reply: "No products found. Please check your query and try again.",
+          reply: `No products found matching your criteria: "${queryDescription}". Please try a different query.`,
           success: false,
           timestamp: new Date().toISOString(),
           processingTime: Date.now() - startTime
         };
       }
 
-      let responseText = `Found ${products.length} product(s):\n\n`;
+      // Generate response with analysis
+      let responseText = `📊 **${queryDescription}**\n\n`;
+      responseText += `Found **${products.length} product(s)**:\n\n`;
+
       products.forEach((product, index) => {
+        let stockStatus, stockMessage;
+
+        if (product.UnitsInStock === 0) {
+          stockStatus = '🔴 NOT AVAILABLE';
+          stockMessage = 'Immediate reorder required';
+        } else if (product.UnitsInStock < 10) {
+          stockStatus = '🟡 CRITICAL LOW';
+          stockMessage = 'Urgent restocking needed';
+        } else if (product.UnitsInStock < 20) {
+          stockStatus = '🟠 LOW STOCK';
+          stockMessage = 'Consider reordering soon';
+        } else {
+          stockStatus = '🟢 AVAILABLE';
+          stockMessage = 'Good stock levels';
+        }
+
         responseText += `**${index + 1}. ${product.ProductName}** (ID: ${product.ID})\n`;
-        responseText += `   💰 Price: $${product.UnitPrice}\n`;
-        responseText += `   📦 Stock: ${product.UnitsInStock} units\n`;
+        responseText += `   💰 **Price**: $${product.UnitPrice}\n`;
+        responseText += `   📦 **Stock**: ${product.UnitsInStock} units - ${stockStatus}\n`;
+        responseText += `   💡 **Status**: ${stockMessage}\n`;
         if (product.Description) {
-          responseText += `   📝 ${product.Description}\n`;
+          responseText += `   📝 **Description**: ${product.Description}\n`;
         }
         responseText += `\n`;
       });
+
+      // Add summary statistics
+      if (products.length > 1) {
+        const totalValue = products.reduce((sum, p) => sum + (p.UnitPrice * p.UnitsInStock), 0);
+        const avgPrice = products.reduce((sum, p) => sum + p.UnitPrice, 0) / products.length;
+        const notAvailable = products.filter(p => p.UnitsInStock === 0).length;
+        const criticalLow = products.filter(p => p.UnitsInStock < 10 && p.UnitsInStock > 0).length;
+        const lowStock = products.filter(p => p.UnitsInStock >= 10 && p.UnitsInStock < 20).length;
+        const available = products.filter(p => p.UnitsInStock >= 20).length;
+
+        responseText += `📈 **Inventory Summary**:\n`;
+        responseText += `• **Total Value**: $${totalValue.toFixed(2)}\n`;
+        responseText += `• **Average Price**: $${avgPrice.toFixed(2)}\n`;
+        responseText += `• 🔴 **Not Available**: ${notAvailable} products\n`;
+        responseText += `• 🟡 **Critical Low** (< 10): ${criticalLow} products\n`;
+        responseText += `• 🟠 **Low Stock** (10-19): ${lowStock} products\n`;
+        responseText += `• 🟢 **Available** (20+): ${available} products\n`;
+
+        // Add actionable recommendations
+        if (notAvailable > 0 || criticalLow > 0) {
+          responseText += `\n⚠️ **Action Required**:\n`;
+          if (notAvailable > 0) {
+            responseText += `• **Urgent**: ${notAvailable} products need immediate reordering\n`;
+          }
+          if (criticalLow > 0) {
+            responseText += `• **Priority**: ${criticalLow} products need restocking within 24-48 hours\n`;
+          }
+        }
+      }
 
       return {
         reply: responseText,
@@ -631,7 +1261,8 @@ RESPONSE:`;
         timestamp: new Date().toISOString(),
         processingTime: Date.now() - startTime,
         data: products,
-        type: "product_list"
+        type: "product_query",
+        query: { description: queryDescription, count: products.length }
       };
 
     } catch (error) {
@@ -858,6 +1489,479 @@ Format your response professionally with clear recommendations.`;
       data: contextData.products || [],
       type: "business_intelligence_fallback"
     };
+  };
+
+  /**
+   * Handle direct transactions (bypass AI intent recognition)
+   */
+  this.handleDirectTransaction = async function(prompt, startTime) {
+    try {
+      console.log(`🚀 Processing direct transaction: "${prompt}"`);
+
+      const lowerPrompt = prompt.toLowerCase();
+
+      // Simple pattern matching for direct transactions
+      if (lowerPrompt.startsWith('create ') || lowerPrompt.startsWith('add ')) {
+        return await this.executeDirectCreate(prompt, startTime);
+      } else if (lowerPrompt.startsWith('update ') || lowerPrompt.startsWith('modify ')) {
+        return await this.executeDirectUpdate(prompt, startTime);
+      } else if (lowerPrompt.startsWith('delete ') || lowerPrompt.startsWith('remove ')) {
+        return await this.executeDirectDelete(prompt, startTime);
+      }
+
+      return {
+        reply: `I detected a transaction request but couldn't parse it. Please use format like:\n• "Create product [name] price [amount]"\n• "Update product [id] price [amount]"\n• "Delete product [id]"`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+
+    } catch (error) {
+      console.error("❌ Error in direct transaction:", error);
+      return {
+        reply: `Transaction failed: ${error.message}`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
+   * Execute direct CREATE operations
+   */
+  this.executeDirectCreate = async function(prompt, startTime) {
+    try {
+      console.log(`➕ Direct CREATE: "${prompt}"`);
+
+      const db = await cds.connect.to('db');
+      const { Products } = db.entities;
+
+      // Enhanced parsing for "Create product [name] price [amount]"
+      const productMatch = prompt.match(/create\s+(?:a\s+)?product\s+(?:named\s+)?(.+?)(?:\s+(?:with\s+)?price\s+(\d+(?:\.\d+)?))/i);
+
+      // Alternative patterns if first doesn't match
+      const altMatch = prompt.match(/create\s+(?:a\s+)?product\s+(.+)/i);
+
+      let productName = '';
+      let price = 0;
+
+      if (productMatch) {
+        productName = productMatch[1].trim();
+        price = productMatch[2] ? parseFloat(productMatch[2]) : 0;
+        console.log(`📝 Parsed from main pattern: name="${productName}", price=${price}`);
+      } else if (altMatch) {
+        // Try to extract name and price from alternative pattern
+        const fullText = altMatch[1].trim();
+        const priceMatch = fullText.match(/(.+?)\s+price\s+(\d+(?:\.\d+)?)/i);
+        if (priceMatch) {
+          productName = priceMatch[1].trim();
+          price = parseFloat(priceMatch[2]);
+        } else {
+          productName = fullText;
+          price = 0;
+        }
+        console.log(`📝 Parsed from alt pattern: name="${productName}", price=${price}`);
+      }
+
+      if (productName) {
+
+        // Get next ID
+        const maxProduct = await db.run(SELECT.one.from(Products).columns('max(ID) as maxId'));
+        const nextId = (maxProduct?.maxId || 0) + 1;
+
+        const newProduct = {
+          ID: nextId,
+          ProductName: productName,
+          UnitPrice: price,
+          UnitsInStock: 0,
+          Description: 'Created via SAP Copilot',
+          CategoryID: 1
+        };
+
+        // Insert into database
+        await db.run(INSERT.into(Products).entries(newProduct));
+
+        console.log(`✅ Product created with ID ${nextId}:`, newProduct);
+
+        // Verify the product was created correctly
+        const verifyProduct = await db.run(SELECT.one.from(Products).where({ ID: nextId }));
+        console.log(`🔍 Verification - Product in DB:`, verifyProduct);
+
+        return {
+          reply: `✅ **Product Created Successfully!**\n\n📦 **New Product Details:**\n• **ID**: ${nextId}\n• **Name**: ${productName}\n• **Price**: $${price}\n• **Stock**: 0 units\n• **Description**: Created via SAP Copilot\n\n🎉 Product has been added to your catalog and is ready for use!`,
+          success: true,
+          timestamp: new Date().toISOString(),
+          processingTime: Date.now() - startTime,
+          data: newProduct,
+          type: "create_success"
+        };
+      }
+
+      return {
+        reply: `I couldn't parse your create request. Please use format: "Create product [name] price [amount]"`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+
+    } catch (error) {
+      console.error("❌ Error in direct CREATE:", error);
+      return {
+        reply: `Create operation failed: ${error.message}`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
+   * Execute direct UPDATE operations
+   */
+  this.executeDirectUpdate = async function(prompt, startTime) {
+    try {
+      console.log(`✏️ Direct UPDATE: "${prompt}"`);
+
+      const db = await cds.connect.to('db');
+      const { Products } = db.entities;
+
+      // Enhanced parsing for multiple update patterns
+      const patterns = {
+        price: /update\s+product\s+(\d+)\s+price\s+(?:to\s+)?(\d+(?:\.\d+)?)/i,
+        id: /update\s+product\s+(\d+)\s+id\s+(?:to\s+)?(\d+)/i,
+        name: /update\s+product\s+(\d+)\s+name\s+(?:to\s+)?(.+)/i,
+        stock: /update\s+product\s+(\d+)\s+stock\s+(?:to\s+)?(\d+)/i
+      };
+
+      let updateMatch = null;
+      let updateField = null;
+      let updateValue = null;
+      let productId = null;
+
+      // Try each pattern
+      for (const [field, pattern] of Object.entries(patterns)) {
+        const match = prompt.match(pattern);
+        if (match) {
+          updateMatch = match;
+          updateField = field;
+          productId = parseInt(match[1]);
+          updateValue = field === 'price' || field === 'stock' ? parseFloat(match[2]) :
+                       field === 'id' ? parseInt(match[2]) : match[2].trim();
+          console.log(`📝 Parsed UPDATE: field=${field}, productId=${productId}, newValue=${updateValue}`);
+          break;
+        }
+      }
+
+      if (updateMatch && updateField && productId) {
+        // Check if product exists
+        const existingProduct = await db.run(SELECT.one.from(Products).where({ ID: productId }));
+
+        if (!existingProduct) {
+          return {
+            reply: `❌ **Product Not Found**\n\nProduct with ID ${productId} does not exist.`,
+            success: false,
+            timestamp: new Date().toISOString(),
+            processingTime: Date.now() - startTime
+          };
+        }
+
+        // Special handling for ID updates (requires more complex logic)
+        if (updateField === 'id') {
+          const newId = updateValue;
+
+          // Check if new ID already exists
+          const existingWithNewId = await db.run(SELECT.one.from(Products).where({ ID: newId }));
+          if (existingWithNewId) {
+            return {
+              reply: `❌ **ID Already Exists**\n\nProduct with ID ${newId} already exists. Please choose a different ID.`,
+              success: false,
+              timestamp: new Date().toISOString(),
+              processingTime: Date.now() - startTime
+            };
+          }
+
+          // Create new product with new ID and delete old one
+          const newProduct = { ...existingProduct, ID: newId };
+          await db.run(INSERT.into(Products).entries(newProduct));
+          await db.run(DELETE.from(Products).where({ ID: productId }));
+
+          console.log(`✅ Product ID changed from ${productId} to ${newId}`);
+
+          return {
+            reply: `✅ **Product ID Updated Successfully!**\n\n📦 **Updated Product:**\n• **Old ID**: ${productId} → **New ID**: ${newId}\n• **Name**: ${newProduct.ProductName}\n• **Price**: $${newProduct.UnitPrice}\n• **Stock**: ${newProduct.UnitsInStock} units\n\n🔄 Product ID has been changed!`,
+            success: true,
+            timestamp: new Date().toISOString(),
+            processingTime: Date.now() - startTime,
+            data: newProduct,
+            type: "update_success"
+          };
+        }
+
+        // Handle other field updates
+        const updateData = {};
+        switch (updateField) {
+          case 'price':
+            updateData.UnitPrice = updateValue;
+            break;
+          case 'name':
+            updateData.ProductName = updateValue;
+            break;
+          case 'stock':
+            updateData.UnitsInStock = updateValue;
+            break;
+        }
+
+        // Update the product
+        await db.run(UPDATE(Products).set(updateData).where({ ID: productId }));
+
+        // Get updated product
+        const updatedProduct = await db.run(SELECT.one.from(Products).where({ ID: productId }));
+
+        console.log(`✅ Product ${productId} ${updateField} updated to ${updateValue}`);
+
+        const fieldDisplayNames = {
+          price: 'Price',
+          name: 'Name',
+          stock: 'Stock'
+        };
+
+        return {
+          reply: `✅ **Product Updated Successfully!**\n\n📦 **Updated Product:**\n• **ID**: ${updatedProduct.ID}\n• **Name**: ${updatedProduct.ProductName}\n• **Price**: $${updatedProduct.UnitPrice}\n• **Stock**: ${updatedProduct.UnitsInStock} units\n\n🔄 ${fieldDisplayNames[updateField]} has been updated!`,
+          success: true,
+          timestamp: new Date().toISOString(),
+          processingTime: Date.now() - startTime,
+          data: updatedProduct,
+          type: "update_success"
+        };
+      }
+
+      return {
+        reply: `I couldn't parse your update request. Please use one of these formats:\n• "Update product [id] price [amount]"\n• "Update product [id] name [new name]"\n• "Update product [id] stock [amount]"\n• "Update product [id] id [new id]"`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+
+    } catch (error) {
+      console.error("❌ Error in direct UPDATE:", error);
+      return {
+        reply: `Update operation failed: ${error.message}`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
+   * Execute direct DELETE operations
+   */
+  this.executeDirectDelete = async function(prompt, startTime) {
+    try {
+      console.log(`🗑️ Direct DELETE: "${prompt}"`);
+
+      const db = await cds.connect.to('db');
+      const { Products } = db.entities;
+
+      // Simple parsing for "Delete product [id]"
+      const deleteMatch = prompt.match(/(?:delete|remove)\s+product\s+(\d+)/i);
+
+      if (deleteMatch) {
+        const productId = parseInt(deleteMatch[1]);
+
+        // Check if product exists
+        const existingProduct = await db.run(SELECT.one.from(Products).where({ ID: productId }));
+        console.log(`🔍 Product to delete:`, existingProduct);
+
+        if (!existingProduct) {
+          return {
+            reply: `❌ **Product Not Found**\n\nProduct with ID ${productId} does not exist.`,
+            success: false,
+            timestamp: new Date().toISOString(),
+            processingTime: Date.now() - startTime
+          };
+        }
+
+        // Delete the product
+        await db.run(DELETE.from(Products).where({ ID: productId }));
+
+        console.log(`✅ Product ${productId} deleted successfully`);
+
+        return {
+          reply: `✅ **Product Deleted Successfully!**\n\n🗑️ **Deleted Product:**\n• **ID**: ${existingProduct.ID}\n• **Name**: ${existingProduct.ProductName}\n• **Price**: $${existingProduct.UnitPrice}\n\n⚠️ This product has been permanently removed from your catalog.`,
+          success: true,
+          timestamp: new Date().toISOString(),
+          processingTime: Date.now() - startTime,
+          data: existingProduct,
+          type: "delete_success"
+        };
+      }
+
+      return {
+        reply: `I couldn't parse your delete request. Please use format: "Delete product [id]"`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+
+    } catch (error) {
+      console.error("❌ Error in direct DELETE:", error);
+      return {
+        reply: `Delete operation failed: ${error.message}`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
+   * Handle transaction operations (CREATE, UPDATE, DELETE)
+   */
+  this.handleTransactionOperation = async function(prompt, analysis, startTime) {
+    try {
+      console.log(`💼 Processing transaction: ${analysis.intent.intent}`);
+
+      // Extract transaction details using AI
+      const transactionDetails = await this.extractTransactionDetails(prompt, analysis, startTime);
+
+      if (!transactionDetails.success) {
+        return transactionDetails; // Return error response
+      }
+
+      // Execute the transaction based on intent
+      switch (analysis.intent.intent) {
+        case 'CREATE_OPERATION':
+          return await this.executeCreateOperation(transactionDetails, startTime);
+        case 'UPDATE_OPERATION':
+          return await this.executeUpdateOperation(transactionDetails, startTime);
+        case 'DELETE_OPERATION':
+          return await this.executeDeleteOperation(transactionDetails, startTime);
+        default:
+          return {
+            reply: `Transaction type "${analysis.intent.intent}" is not yet supported. Please try CREATE, UPDATE, or DELETE operations.`,
+            success: false,
+            timestamp: new Date().toISOString(),
+            processingTime: Date.now() - startTime
+          };
+      }
+
+    } catch (error) {
+      console.error("❌ Error in transaction operation:", error);
+      return {
+        reply: `I encountered an error while processing your transaction: ${error.message}. Please check your request and try again.`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
+   * Extract transaction details using AI
+   */
+  this.extractTransactionDetails = async function(prompt, analysis, startTime) {
+    try {
+      console.log(`🔍 Extracting transaction details from: "${prompt}"`);
+
+      // Get current business data for context
+      const contextData = await this.getRelevantBusinessData(prompt);
+      const businessContext = this.createComprehensiveBusinessContext(contextData, prompt);
+
+      // Create AI prompt for transaction extraction
+      const extractionPrompt = `You are a SAP transaction parser. Extract structured transaction details from the user's request.
+
+User Request: "${prompt}"
+Intent: ${analysis.intent.intent}
+
+BUSINESS CONTEXT:
+${businessContext}
+
+INSTRUCTIONS:
+Extract the following information and respond ONLY with a JSON object:
+{
+  "operation": "CREATE|UPDATE|DELETE",
+  "entity": "Product|Customer|Order",
+  "data": {
+    // Key-value pairs of the data to process
+  },
+  "conditions": {
+    // For UPDATE/DELETE: conditions to identify records
+  },
+  "validation": {
+    "isValid": true/false,
+    "errors": ["list of validation errors if any"]
+  }
+}
+
+Examples:
+- "Create a product named Laptop with price 999" → {"operation":"CREATE","entity":"Product","data":{"ProductName":"Laptop","UnitPrice":999}}
+- "Update customer 5 address to Berlin" → {"operation":"UPDATE","entity":"Customer","data":{"Address":"Berlin"},"conditions":{"ID":5}}
+- "Delete product 10" → {"operation":"DELETE","entity":"Product","conditions":{"ID":10}}
+
+JSON Response:`;
+
+      if (!COHERE_KEY) {
+        // Fallback parsing without AI
+        return this.parseTransactionFallback(prompt, analysis, startTime);
+      }
+
+      const response = await axios.post(
+        COHERE_URL,
+        {
+          model: "command",
+          message: extractionPrompt,
+          max_tokens: 500,
+          temperature: 0.1 // Low temperature for structured output
+        },
+        {
+          timeout: 15000,
+          headers: {
+            'Authorization': `Bearer ${COHERE_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      const aiResponse = response.data?.text?.trim();
+      if (!aiResponse) {
+        throw new Error("No response from AI for transaction extraction");
+      }
+
+      // Parse JSON response
+      let transactionData;
+      try {
+        // Extract JSON from AI response (in case there's extra text)
+        const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+        const jsonStr = jsonMatch ? jsonMatch[0] : aiResponse;
+        transactionData = JSON.parse(jsonStr);
+      } catch (parseError) {
+        console.error("❌ Failed to parse AI response as JSON:", aiResponse);
+        return this.parseTransactionFallback(prompt, analysis, startTime);
+      }
+
+      // Validate the extracted data
+      if (!transactionData.validation?.isValid) {
+        return {
+          reply: `I couldn't process your transaction request. Issues found:\n• ${transactionData.validation?.errors?.join('\n• ') || 'Invalid transaction format'}\n\nPlease provide more specific details.`,
+          success: false,
+          timestamp: new Date().toISOString(),
+          processingTime: Date.now() - startTime
+        };
+      }
+
+      console.log(`✅ Transaction details extracted:`, transactionData);
+      return {
+        success: true,
+        ...transactionData,
+        originalPrompt: prompt
+      };
+
+    } catch (error) {
+      console.error("❌ Error extracting transaction details:", error);
+      return this.parseTransactionFallback(prompt, analysis, startTime);
+    }
   };
 
   /**
@@ -1240,6 +2344,497 @@ What would you like to explore?`;
       data: contextData,
       type: "intelligent_contextual"
     };
+  };
+
+  /**
+   * Fallback transaction parser when AI is not available
+   */
+  this.parseTransactionFallback = function(prompt, analysis, startTime) {
+    const lowerPrompt = prompt.toLowerCase();
+
+    // Simple pattern matching for common operations
+    if (analysis.intent.intent === 'CREATE_OPERATION') {
+      if (lowerPrompt.includes('product')) {
+        return {
+          success: true,
+          operation: "CREATE",
+          entity: "Product",
+          data: { ProductName: "New Product", UnitPrice: 0 },
+          validation: { isValid: true, errors: [] },
+          originalPrompt: prompt,
+          note: "Using simplified parsing - please provide specific details"
+        };
+      }
+    }
+
+    return {
+      reply: `I need AI assistance to parse complex transactions. Please use simpler commands like:\n• "Create product Laptop price 999"\n• "Update customer 5 address Berlin"\n• "Delete product 10"`,
+      success: false,
+      timestamp: new Date().toISOString(),
+      processingTime: Date.now() - startTime
+    };
+  };
+
+  /**
+   * Execute CREATE operations
+   */
+  this.executeCreateOperation = async function(transactionDetails, startTime) {
+    try {
+      console.log(`➕ Executing CREATE operation for ${transactionDetails.entity}`);
+
+      const db = await cds.connect.to('db');
+      let result;
+
+      switch (transactionDetails.entity.toLowerCase()) {
+        case 'product':
+          const { Products } = db.entities;
+
+          // Get next available ID
+          const maxProduct = await db.run(SELECT.one.from(Products).columns('max(ID) as maxId'));
+          const nextId = (maxProduct?.maxId || 0) + 1;
+
+          const newProduct = {
+            ID: nextId,
+            ProductName: transactionDetails.data.ProductName || 'New Product',
+            UnitPrice: transactionDetails.data.UnitPrice || 0,
+            UnitsInStock: transactionDetails.data.UnitsInStock || 0,
+            Description: transactionDetails.data.Description || 'Created via SAP Copilot',
+            CategoryID: transactionDetails.data.CategoryID || 1
+          };
+
+          result = await db.run(INSERT.into(Products).entries(newProduct));
+
+          return {
+            reply: `✅ **Product Created Successfully!**\n\n📦 **New Product Details:**\n• **ID**: ${nextId}\n• **Name**: ${newProduct.ProductName}\n• **Price**: $${newProduct.UnitPrice}\n• **Stock**: ${newProduct.UnitsInStock} units\n• **Description**: ${newProduct.Description}\n\n🎉 Product has been added to your catalog and is ready for use!`,
+            success: true,
+            timestamp: new Date().toISOString(),
+            processingTime: Date.now() - startTime,
+            data: newProduct,
+            type: "create_success"
+          };
+
+        case 'customer':
+          const { Customers } = db.entities;
+
+          const maxCustomer = await db.run(SELECT.one.from(Customers).columns('max(ID) as maxId'));
+          const nextCustomerId = (maxCustomer?.maxId || 0) + 1;
+
+          const newCustomer = {
+            ID: nextCustomerId,
+            CompanyName: transactionDetails.data.CompanyName || 'New Company',
+            ContactName: transactionDetails.data.ContactName || 'New Contact',
+            Country: transactionDetails.data.Country || 'Unknown',
+            Email: transactionDetails.data.Email || null
+          };
+
+          result = await db.run(INSERT.into(Customers).entries(newCustomer));
+
+          return {
+            reply: `✅ **Customer Created Successfully!**\n\n👤 **New Customer Details:**\n• **ID**: ${nextCustomerId}\n• **Company**: ${newCustomer.CompanyName}\n• **Contact**: ${newCustomer.ContactName}\n• **Country**: ${newCustomer.Country}\n${newCustomer.Email ? `• **Email**: ${newCustomer.Email}\n` : ''}\n🎉 Customer has been added to your database!`,
+            success: true,
+            timestamp: new Date().toISOString(),
+            processingTime: Date.now() - startTime,
+            data: newCustomer,
+            type: "create_success"
+          };
+
+        default:
+          return {
+            reply: `❌ CREATE operation for "${transactionDetails.entity}" is not yet supported. Currently supported: Product, Customer.`,
+            success: false,
+            timestamp: new Date().toISOString(),
+            processingTime: Date.now() - startTime
+          };
+      }
+
+    } catch (error) {
+      console.error("❌ Error in CREATE operation:", error);
+      return {
+        reply: `❌ **Create Operation Failed**\n\nError: ${error.message}\n\nPlease check your data and try again. Make sure all required fields are provided.`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
+   * Execute UPDATE operations
+   */
+  this.executeUpdateOperation = async function(transactionDetails, startTime) {
+    try {
+      console.log(`✏️ Executing UPDATE operation for ${transactionDetails.entity}`);
+
+      const db = await cds.connect.to('db');
+
+      switch (transactionDetails.entity.toLowerCase()) {
+        case 'product':
+          const { Products } = db.entities;
+
+          // Find the product first
+          const productId = transactionDetails.conditions.ID;
+          const existingProduct = await db.run(SELECT.one.from(Products).where({ ID: productId }));
+
+          if (!existingProduct) {
+            return {
+              reply: `❌ **Product Not Found**\n\nProduct with ID ${productId} does not exist. Please check the ID and try again.`,
+              success: false,
+              timestamp: new Date().toISOString(),
+              processingTime: Date.now() - startTime
+            };
+          }
+
+          // Update the product
+          await db.run(UPDATE(Products).set(transactionDetails.data).where({ ID: productId }));
+
+          // Get updated product
+          const updatedProduct = await db.run(SELECT.one.from(Products).where({ ID: productId }));
+
+          return {
+            reply: `✅ **Product Updated Successfully!**\n\n📦 **Updated Product:**\n• **ID**: ${updatedProduct.ID}\n• **Name**: ${updatedProduct.ProductName}\n• **Price**: $${updatedProduct.UnitPrice}\n• **Stock**: ${updatedProduct.UnitsInStock} units\n\n🔄 Changes have been saved to your catalog!`,
+            success: true,
+            timestamp: new Date().toISOString(),
+            processingTime: Date.now() - startTime,
+            data: updatedProduct,
+            type: "update_success"
+          };
+
+        case 'customer':
+          const { Customers } = db.entities;
+
+          const customerId = transactionDetails.conditions.ID;
+          const existingCustomer = await db.run(SELECT.one.from(Customers).where({ ID: customerId }));
+
+          if (!existingCustomer) {
+            return {
+              reply: `❌ **Customer Not Found**\n\nCustomer with ID ${customerId} does not exist. Please check the ID and try again.`,
+              success: false,
+              timestamp: new Date().toISOString(),
+              processingTime: Date.now() - startTime
+            };
+          }
+
+          await db.run(UPDATE(Customers).set(transactionDetails.data).where({ ID: customerId }));
+          const updatedCustomer = await db.run(SELECT.one.from(Customers).where({ ID: customerId }));
+
+          return {
+            reply: `✅ **Customer Updated Successfully!**\n\n👤 **Updated Customer:**\n• **ID**: ${updatedCustomer.ID}\n• **Company**: ${updatedCustomer.CompanyName}\n• **Contact**: ${updatedCustomer.ContactName}\n• **Country**: ${updatedCustomer.Country}\n\n🔄 Customer information has been updated!`,
+            success: true,
+            timestamp: new Date().toISOString(),
+            processingTime: Date.now() - startTime,
+            data: updatedCustomer,
+            type: "update_success"
+          };
+
+        default:
+          return {
+            reply: `❌ UPDATE operation for "${transactionDetails.entity}" is not yet supported. Currently supported: Product, Customer.`,
+            success: false,
+            timestamp: new Date().toISOString(),
+            processingTime: Date.now() - startTime
+          };
+      }
+
+    } catch (error) {
+      console.error("❌ Error in UPDATE operation:", error);
+      return {
+        reply: `❌ **Update Operation Failed**\n\nError: ${error.message}\n\nPlease check your data and try again.`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
+   * Execute DELETE operations
+   */
+  this.executeDeleteOperation = async function(transactionDetails, startTime) {
+    try {
+      console.log(`🗑️ Executing DELETE operation for ${transactionDetails.entity}`);
+
+      const db = await cds.connect.to('db');
+
+      switch (transactionDetails.entity.toLowerCase()) {
+        case 'product':
+          const { Products } = db.entities;
+
+          const productId = transactionDetails.conditions.ID;
+          const existingProduct = await db.run(SELECT.one.from(Products).where({ ID: productId }));
+
+          if (!existingProduct) {
+            return {
+              reply: `❌ **Product Not Found**\n\nProduct with ID ${productId} does not exist. Please check the ID and try again.`,
+              success: false,
+              timestamp: new Date().toISOString(),
+              processingTime: Date.now() - startTime
+            };
+          }
+
+          await db.run(DELETE.from(Products).where({ ID: productId }));
+
+          return {
+            reply: `✅ **Product Deleted Successfully!**\n\n🗑️ **Deleted Product:**\n• **ID**: ${existingProduct.ID}\n• **Name**: ${existingProduct.ProductName}\n• **Price**: $${existingProduct.UnitPrice}\n\n⚠️ This product has been permanently removed from your catalog.`,
+            success: true,
+            timestamp: new Date().toISOString(),
+            processingTime: Date.now() - startTime,
+            data: existingProduct,
+            type: "delete_success"
+          };
+
+        case 'customer':
+          const { Customers } = db.entities;
+
+          const customerId = transactionDetails.conditions.ID;
+          const existingCustomer = await db.run(SELECT.one.from(Customers).where({ ID: customerId }));
+
+          if (!existingCustomer) {
+            return {
+              reply: `❌ **Customer Not Found**\n\nCustomer with ID ${customerId} does not exist. Please check the ID and try again.`,
+              success: false,
+              timestamp: new Date().toISOString(),
+              processingTime: Date.now() - startTime
+            };
+          }
+
+          await db.run(DELETE.from(Customers).where({ ID: customerId }));
+
+          return {
+            reply: `✅ **Customer Deleted Successfully!**\n\n🗑️ **Deleted Customer:**\n• **ID**: ${existingCustomer.ID}\n• **Company**: ${existingCustomer.CompanyName}\n• **Contact**: ${existingCustomer.ContactName}\n\n⚠️ This customer has been permanently removed from your database.`,
+            success: true,
+            timestamp: new Date().toISOString(),
+            processingTime: Date.now() - startTime,
+            data: existingCustomer,
+            type: "delete_success"
+          };
+
+        default:
+          return {
+            reply: `❌ DELETE operation for "${transactionDetails.entity}" is not yet supported. Currently supported: Product, Customer.`,
+            success: false,
+            timestamp: new Date().toISOString(),
+            processingTime: Date.now() - startTime
+          };
+      }
+
+    } catch (error) {
+      console.error("❌ Error in DELETE operation:", error);
+      return {
+        reply: `❌ **Delete Operation Failed**\n\nError: ${error.message}\n\nPlease check your request and try again.`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
+   * Parse report request from natural language
+   */
+  this.parseReportRequest = function(prompt) {
+    const lowerPrompt = prompt.toLowerCase();
+
+    // Determine format
+    let format = 'pdf'; // default
+    if (lowerPrompt.includes('excel') || lowerPrompt.includes('xlsx')) {
+      format = 'excel';
+    } else if (lowerPrompt.includes('pdf')) {
+      format = 'pdf';
+    }
+
+    // Determine data type
+    let dataType = 'products'; // default
+    let title = 'Business Report';
+
+    if (lowerPrompt.includes('product')) {
+      dataType = 'products';
+      title = 'Products Report';
+    } else if (lowerPrompt.includes('inventory') || lowerPrompt.includes('stock')) {
+      dataType = 'inventory';
+      title = 'Inventory Report';
+    } else if (lowerPrompt.includes('customer')) {
+      dataType = 'customers';
+      title = 'Customers Report';
+    } else if (lowerPrompt.includes('summary') || lowerPrompt.includes('overview')) {
+      dataType = 'summary';
+      title = 'Business Summary Report';
+    }
+
+    console.log(`📋 Parsed report request: format=${format}, dataType=${dataType}, title=${title}`);
+
+    return {
+      success: true,
+      format: format,
+      dataType: dataType,
+      title: title
+    };
+  };
+
+  /**
+   * Get data for report generation
+   */
+  this.getReportData = async function(dataType) {
+    try {
+      const db = await cds.connect.to('db');
+      let data = [];
+
+      switch (dataType) {
+        case 'products':
+          const { Products } = db.entities;
+          data = await db.run(SELECT.from(Products));
+          break;
+
+        case 'inventory':
+          const { Products: InventoryProducts } = db.entities;
+          data = await db.run(SELECT.from(InventoryProducts));
+          // Add inventory-specific calculations
+          data = data.map(product => ({
+            ...product,
+            TotalValue: (product.UnitPrice * product.UnitsInStock).toFixed(2),
+            Status: product.UnitsInStock === 0 ? 'NOT AVAILABLE' :
+                   product.UnitsInStock < 10 ? 'CRITICAL LOW' :
+                   product.UnitsInStock < 20 ? 'LOW STOCK' : 'AVAILABLE',
+            StatusMessage: product.UnitsInStock === 0 ? 'Immediate reorder required' :
+                          product.UnitsInStock < 10 ? 'Urgent restocking needed' :
+                          product.UnitsInStock < 20 ? 'Consider reordering soon' : 'Good stock levels'
+          }));
+          break;
+
+        case 'customers':
+          const { Customers } = db.entities;
+          data = await db.run(SELECT.from(Customers));
+          break;
+
+        case 'summary':
+          // Get summary data from multiple entities
+          const { Products: SummaryProducts, Customers: SummaryCustomers } = db.entities;
+          const products = await db.run(SELECT.from(SummaryProducts));
+          const customers = await db.run(SELECT.from(SummaryCustomers));
+
+          data = [{
+            TotalProducts: products.length,
+            TotalCustomers: customers.length,
+            TotalInventoryValue: products.reduce((sum, p) => sum + (p.UnitPrice * p.UnitsInStock), 0).toFixed(2),
+            OutOfStockItems: products.filter(p => p.UnitsInStock === 0).length,
+            LowStockItems: products.filter(p => p.UnitsInStock < 20 && p.UnitsInStock > 0).length,
+            AverageProductPrice: (products.reduce((sum, p) => sum + p.UnitPrice, 0) / products.length).toFixed(2),
+            CountriesServed: [...new Set(customers.map(c => c.Country))].length
+          }];
+          break;
+
+        default:
+          return {
+            success: false,
+            error: `Unknown data type: ${dataType}`
+          };
+      }
+
+      console.log(`📊 Retrieved ${data.length} records for ${dataType} report`);
+
+      return {
+        success: true,
+        data: data
+      };
+
+    } catch (error) {
+      console.error(`❌ Error getting report data for ${dataType}:`, error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  };
+
+  /**
+   * Parse stock-based query conditions
+   */
+  this.parseStockQuery = function(prompt) {
+    const lowerPrompt = prompt.toLowerCase();
+
+    // Stock patterns with thresholds
+    const patterns = [
+      { regex: /stock\s*(below|under|less\s*than|<)\s*(\d+)/i, condition: 'below' },
+      { regex: /stock\s*(above|over|greater\s*than|>)\s*(\d+)/i, condition: 'above' },
+      { regex: /stock\s*(equals?|=|is)\s*(\d+)/i, condition: 'equals' },
+      { regex: /under\s*stock\s*(\d+)/i, condition: 'below' },
+      { regex: /low\s*stock/i, condition: 'below', defaultThreshold: 20 },
+      { regex: /out\s*of\s*stock/i, condition: 'equals', defaultThreshold: 0 }
+    ];
+
+    for (const pattern of patterns) {
+      const match = prompt.match(pattern.regex);
+      if (match) {
+        const threshold = match[2] ? parseInt(match[2]) : pattern.defaultThreshold;
+        return {
+          isStockQuery: true,
+          condition: pattern.condition,
+          threshold: threshold
+        };
+      }
+    }
+
+    return { isStockQuery: false };
+  };
+
+  /**
+   * Parse price-based query conditions
+   */
+  this.parsePriceQuery = function(prompt) {
+    const lowerPrompt = prompt.toLowerCase();
+
+    const patterns = [
+      { regex: /price\s*(below|under|less\s*than|<)\s*(\d+(?:\.\d+)?)/i, condition: 'below' },
+      { regex: /price\s*(above|over|greater\s*than|>)\s*(\d+(?:\.\d+)?)/i, condition: 'above' },
+      { regex: /price\s*(equals?|=|is)\s*(\d+(?:\.\d+)?)/i, condition: 'equals' },
+      { regex: /expensive/i, condition: 'above', defaultThreshold: 50 },
+      { regex: /cheap/i, condition: 'below', defaultThreshold: 20 }
+    ];
+
+    for (const pattern of patterns) {
+      const match = prompt.match(pattern.regex);
+      if (match) {
+        const threshold = match[2] ? parseFloat(match[2]) : pattern.defaultThreshold;
+        return {
+          isPriceQuery: true,
+          condition: pattern.condition,
+          threshold: threshold
+        };
+      }
+    }
+
+    return { isPriceQuery: false };
+  };
+
+  /**
+   * Build stock-based database query
+   */
+  this.buildStockQuery = function(Products, stockQuery) {
+    switch (stockQuery.condition) {
+      case 'below':
+        return SELECT.from(Products).where({ UnitsInStock: { '<': stockQuery.threshold } });
+      case 'above':
+        return SELECT.from(Products).where({ UnitsInStock: { '>': stockQuery.threshold } });
+      case 'equals':
+        return SELECT.from(Products).where({ UnitsInStock: stockQuery.threshold });
+      default:
+        return SELECT.from(Products).limit(10);
+    }
+  };
+
+  /**
+   * Build price-based database query
+   */
+  this.buildPriceQuery = function(Products, priceQuery) {
+    switch (priceQuery.condition) {
+      case 'below':
+        return SELECT.from(Products).where({ UnitPrice: { '<': priceQuery.threshold } });
+      case 'above':
+        return SELECT.from(Products).where({ UnitPrice: { '>': priceQuery.threshold } });
+      case 'equals':
+        return SELECT.from(Products).where({ UnitPrice: priceQuery.threshold });
+      default:
+        return SELECT.from(Products).limit(10);
+    }
   };
 
 });

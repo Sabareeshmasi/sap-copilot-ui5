@@ -25,11 +25,26 @@ sap.ui.define([
         this.getView().setModel(oChatModel, "chat");
         this._bChatVisible = false;
 
+        // Initialize notifications model
+        const oNotificationModel = new JSONModel({
+          notifications: [],
+          unreadCount: 0,
+          isVisible: false
+        });
+        this.getView().setModel(oNotificationModel, "notifications");
+        this._bNotificationsVisible = false;
+
         // Store reference to controller for global functions
         window.sapCopilotController = this;
 
         // Initialize conversation with welcome message
         this._addSystemMessage("Hello! I'm your SAP Copilot assistant. I can help you with product queries, customer information, and business data analysis. Try asking me something like 'Show me all products under $20' or 'List customers from Germany'.");
+
+        // Initialize WebSocket for real-time notifications
+        this._initializeNotificationSocket();
+
+        // Add some test notifications for demonstration
+        this._addTestNotifications();
       },
   
       onSearch: function (oEvent) {
@@ -54,7 +69,7 @@ sap.ui.define([
             <div class="chat-shell" id="copilotShell">
               <div class="chat-header">
                 <h3>SAP Copilot</h3>
-                <button onclick="window.sapCopilotController.onToggleChat()" class="close-btn">×</button>
+                <button onclick="window.sapCopilotController.onCloseChat()" class="close-btn">×</button>
               </div>
               <div class="chat-box" id="chatMessages">
                 <div class="chat-message system-message">
@@ -90,6 +105,21 @@ sap.ui.define([
           this._bChatVisible = false;
           oChatModel.setProperty("/isVisible", false);
         }
+      },
+
+      /**
+       * Close chat panel (dedicated close function)
+       */
+      onCloseChat: function() {
+        const oHTMLContainer = this.byId("chatShellContainer");
+        const oChatModel = this.getView().getModel("chat");
+
+        // Always close the chat
+        oHTMLContainer.setContent("");
+        this._bChatVisible = false;
+        oChatModel.setProperty("/isVisible", false);
+
+        console.log("💬 Chat panel closed");
       },
 
       submitChat: async function() {
@@ -133,8 +163,23 @@ sap.ui.define([
               <span class="sender">Copilot:</span> ${this._escapeHtml(response.reply)}
           `;
 
+          // Add download button for reports
+          if (response.type === "report_generated" && response.data && response.data.reportFile) {
+            responseHtml += `
+              <div class="report-download-section" style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px; border-left: 4px solid #0070f3;">
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                  <span style="font-size: 14px; color: #333;">📄 Report Ready:</span>
+                  <button onclick="window.open('/download/${response.data.reportFile.fileName}', '_blank')"
+                          style="background: #0070f3; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500;">
+                    📥 Download ${response.data.reportFile.fileName}
+                  </button>
+                </div>
+              </div>
+            `;
+          }
+
           // Add data visualization if available
-          if (response.data && response.data.length > 0) {
+          if (response.data && Array.isArray(response.data) && response.data.length > 0) {
             responseHtml += this._renderDataTable(response.data, response.query);
           }
 
@@ -149,6 +194,11 @@ sap.ui.define([
 
           responseHtml += `</div>`;
           msgBox.innerHTML += responseHtml;
+
+          // Check if this is a report generation response and trigger download
+          if (response.type === "report_generated" && response.data && response.data.reportFile) {
+            this._triggerReportDownload(response.data.reportFile);
+          }
 
           // Update conversation context
           const context = oChatModel.getProperty("/conversationContext");
@@ -226,6 +276,309 @@ sap.ui.define([
 
       _generateSessionId: function() {
         return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      },
+
+      /**
+       * Format stock status text based on stock level
+       */
+      formatStockStatus: function(unitsInStock) {
+        if (unitsInStock === 0) {
+          return "Not Available";
+        } else if (unitsInStock < 10) {
+          return "Critical Low";
+        } else if (unitsInStock < 20) {
+          return "Low Stock";
+        } else {
+          return "Available";
+        }
+      },
+
+      /**
+       * Format stock status state (color) based on stock level
+       */
+      formatStockState: function(unitsInStock) {
+        if (unitsInStock === 0) {
+          return "Error";        // Red
+        } else if (unitsInStock < 10) {
+          return "Warning";      // Orange/Yellow
+        } else if (unitsInStock < 20) {
+          return "Information";  // Blue
+        } else {
+          return "Success";      // Green
+        }
+      },
+
+      /**
+       * Toggle notification panel visibility
+       */
+      onToggleNotifications: function() {
+        const oNotificationModel = this.getView().getModel("notifications");
+        const bCurrentlyVisible = oNotificationModel.getProperty("/isVisible");
+
+        if (bCurrentlyVisible) {
+          this._hideNotificationPanel();
+        } else {
+          this._showNotificationPanel();
+        }
+      },
+
+      /**
+       * Initialize WebSocket for real-time notifications
+       */
+      _initializeNotificationSocket: function() {
+        try {
+          // Check if Socket.IO is available
+          if (typeof io === 'undefined') {
+            console.warn('⚠️ Socket.IO not available - notifications will work in demo mode');
+            return;
+          }
+
+          // Connect to WebSocket for real-time notifications
+          this._notificationSocket = io();
+
+          this._notificationSocket.on('connect', () => {
+            console.log('📡 Connected to notification WebSocket');
+          });
+
+          this._notificationSocket.on('disconnect', () => {
+            console.log('📡 Disconnected from notification WebSocket');
+          });
+
+          this._notificationSocket.on('new-notification', (notification) => {
+            console.log('🔔 Received notification:', notification);
+            this._addNotification(notification);
+          });
+
+          this._notificationSocket.on('alert-triggered', (alert) => {
+            console.log('🚨 Received alert:', alert);
+            this._addAlertNotification(alert);
+          });
+
+        } catch (error) {
+          console.warn('⚠️ WebSocket initialization failed:', error.message);
+        }
+      },
+
+      /**
+       * Add notification to the panel
+       */
+      _addNotification: function(notification) {
+        const oNotificationModel = this.getView().getModel("notifications");
+        const aNotifications = oNotificationModel.getProperty("/notifications") || [];
+
+        // Add new notification at the beginning
+        aNotifications.unshift(notification);
+
+        // Keep only last 20 notifications
+        if (aNotifications.length > 20) {
+          aNotifications.splice(20);
+        }
+
+        // Update unread count
+        const unreadCount = aNotifications.filter(n => !n.read).length;
+
+        oNotificationModel.setProperty("/notifications", aNotifications);
+        oNotificationModel.setProperty("/unreadCount", unreadCount);
+
+        // Show toast notification
+        MessageToast.show(`🔔 ${notification.title}`);
+      },
+
+      /**
+       * Add alert notification
+       */
+      _addAlertNotification: function(alert) {
+        const notification = {
+          id: `alert_${Date.now()}`,
+          type: 'alert',
+          title: `🚨 ${alert.ruleName}`,
+          message: alert.message,
+          timestamp: alert.timestamp,
+          priority: alert.priority,
+          read: false
+        };
+
+        this._addNotification(notification);
+      },
+
+      /**
+       * Show notification panel
+       */
+      _showNotificationPanel: function() {
+        const oNotificationModel = this.getView().getModel("notifications");
+        const oContainer = this.byId("notificationPanelContainer");
+
+        // Create notification panel HTML
+        const notificationHTML = this._createNotificationPanelHTML();
+        oContainer.setContent(notificationHTML);
+
+        oNotificationModel.setProperty("/isVisible", true);
+        this._bNotificationsVisible = true;
+
+        // Mark all notifications as read when panel is opened
+        this._markAllNotificationsAsRead();
+      },
+
+      /**
+       * Hide notification panel
+       */
+      _hideNotificationPanel: function() {
+        const oNotificationModel = this.getView().getModel("notifications");
+        const oContainer = this.byId("notificationPanelContainer");
+
+        oContainer.setContent("");
+        oNotificationModel.setProperty("/isVisible", false);
+        this._bNotificationsVisible = false;
+      },
+
+      /**
+       * Create notification panel HTML
+       */
+      _createNotificationPanelHTML: function() {
+        const oNotificationModel = this.getView().getModel("notifications");
+        const aNotifications = oNotificationModel.getProperty("/notifications") || [];
+
+        let html = `
+          <div class="notification-panel">
+            <div class="notification-header">
+              <h3>🔔 Notifications</h3>
+              <button class="close-btn" onclick="window.sapCopilotController._hideNotificationPanel()">×</button>
+            </div>
+            <div class="notification-list">
+        `;
+
+        if (aNotifications.length === 0) {
+          html += `
+            <div class="no-notifications">
+              <p>📭 No notifications yet</p>
+              <p>Alerts and updates will appear here</p>
+            </div>
+          `;
+        } else {
+          aNotifications.forEach(notification => {
+            const timeAgo = this._getTimeAgo(notification.timestamp);
+            const priorityClass = notification.priority || 'medium';
+
+            html += `
+              <div class="notification-item ${priorityClass}">
+                <div class="notification-content">
+                  <div class="notification-title">${notification.title}</div>
+                  <div class="notification-message">${notification.message}</div>
+                  <div class="notification-time">${timeAgo}</div>
+                </div>
+              </div>
+            `;
+          });
+        }
+
+        html += `
+            </div>
+          </div>
+        `;
+
+        return html;
+      },
+
+      /**
+       * Mark all notifications as read
+       */
+      _markAllNotificationsAsRead: function() {
+        const oNotificationModel = this.getView().getModel("notifications");
+        const aNotifications = oNotificationModel.getProperty("/notifications") || [];
+
+        aNotifications.forEach(notification => {
+          notification.read = true;
+        });
+
+        oNotificationModel.setProperty("/notifications", aNotifications);
+        oNotificationModel.setProperty("/unreadCount", 0);
+      },
+
+      /**
+       * Get time ago string
+       */
+      _getTimeAgo: function(timestamp) {
+        const now = new Date();
+        const time = new Date(timestamp);
+        const diffMs = now - time;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+
+        if (diffMins < 1) return 'just now';
+        if (diffMins < 60) return `${diffMins}m ago`;
+        if (diffHours < 24) return `${diffHours}h ago`;
+        return `${diffDays}d ago`;
+      },
+
+      /**
+       * Add test notifications for demonstration
+       */
+      _addTestNotifications: function() {
+        // Add some sample notifications to show the system is working
+        setTimeout(() => {
+          this._addNotification({
+            id: 'test_1',
+            type: 'alert',
+            title: '🚨 Critical Alert: Out of Stock',
+            message: '3 products are completely out of stock and need immediate attention',
+            timestamp: new Date().toISOString(),
+            priority: 'high',
+            read: false
+          });
+        }, 2000);
+
+        setTimeout(() => {
+          this._addNotification({
+            id: 'test_2',
+            type: 'alert',
+            title: '⚠️ Alert: Low Stock Warning',
+            message: '7 products have stock below 20 units - consider reordering',
+            timestamp: new Date(Date.now() - 300000).toISOString(), // 5 minutes ago
+            priority: 'medium',
+            read: false
+          });
+        }, 3000);
+
+        setTimeout(() => {
+          this._addNotification({
+            id: 'test_3',
+            type: 'info',
+            title: '📊 System Update',
+            message: 'Alert monitoring system is active and checking every 5 minutes',
+            timestamp: new Date(Date.now() - 600000).toISOString(), // 10 minutes ago
+            priority: 'low',
+            read: false
+          });
+        }, 4000);
+      },
+
+      _triggerReportDownload: function(reportFile) {
+        try {
+          console.log("🔽 Triggering automatic download for:", reportFile.fileName);
+
+          // Create download link
+          const downloadUrl = `/download/${reportFile.fileName}`;
+
+          // Create temporary link element and trigger download
+          const link = document.createElement('a');
+          link.href = downloadUrl;
+          link.download = reportFile.fileName;
+          link.style.display = 'none';
+
+          // Add to DOM, click, and remove
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+          // Show success message
+          MessageToast.show(`📥 Downloading ${reportFile.fileName}...`);
+
+          console.log("✅ Download triggered successfully");
+        } catch (error) {
+          console.error("❌ Error triggering download:", error);
+          MessageToast.show("Download failed. Please use the provided link.");
+        }
       },
 
       _addSystemMessage: function(message) {

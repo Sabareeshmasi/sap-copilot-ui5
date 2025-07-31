@@ -19,6 +19,27 @@
   box-shadow: 0 6px 16px rgba(0, 112, 242, 0.4);
 }
 
+/* Floating Notification Toggle Button */
+.floating-notification-toggle {
+  position: fixed;
+  bottom: 20px;
+  right: 100px;
+  z-index: 1001;
+  background-color: #ff6b35;
+  color: white;
+  border-radius: 50%;
+  width: 56px;
+  height: 56px;
+  box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3);
+  transition: all 0.3s ease;
+}
+
+.floating-notification-toggle:hover {
+  background-color: #e55a2b;
+  transform: scale(1.05);
+  box-shadow: 0 6px 16px rgba(255, 107, 53, 0.4);
+}
+
 /* Chat Shell Container */
 .chat-shell {
   position: fixed;
@@ -58,20 +79,28 @@
   background: none;
   border: none;
   color: white;
-  font-size: 20px;
+  font-size: 22px;
+  font-weight: bold;
   cursor: pointer;
-  padding: 0;
-  width: 24px;
-  height: 24px;
+  padding: 4px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  transition: background-color 0.2s;
+  transition: all 0.2s ease;
+  line-height: 1;
 }
 
 .chat-shell .close-btn:hover {
   background-color: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
+}
+
+.chat-shell .close-btn:active {
+  background-color: rgba(255, 255, 255, 0.3);
+  transform: scale(0.95);
 }
 
 /* Chat Messages Area */
@@ -220,6 +249,127 @@
   background: #a8a8a8;
 }
 
+/* Notification Panel */
+.notification-panel {
+  position: fixed;
+  bottom: 90px;
+  right: 100px;
+  width: 350px;
+  max-height: 450px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  font-family: "72", "Helvetica Neue", Arial, sans-serif;
+}
+
+.notification-panel .notification-header {
+  background: linear-gradient(135deg, #ff6b35, #e55a2b);
+  color: white;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.notification-panel .notification-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.notification-panel .close-btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 22px;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 4px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+  line-height: 1;
+}
+
+.notification-panel .close-btn:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
+}
+
+.notification-panel .close-btn:active {
+  background-color: rgba(255, 255, 255, 0.3);
+  transform: scale(0.95);
+}
+
+.notification-panel .notification-list {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 350px;
+  background: #fafafa;
+}
+
+.notification-panel .no-notifications {
+  padding: 40px 20px;
+  text-align: center;
+  color: #666;
+}
+
+.notification-panel .no-notifications p {
+  margin: 8px 0;
+}
+
+.notification-panel .notification-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  background: white;
+  transition: background-color 0.2s;
+}
+
+.notification-panel .notification-item:hover {
+  background: #f8f9fa;
+}
+
+.notification-panel .notification-item.high {
+  border-left: 4px solid #dc3545;
+}
+
+.notification-panel .notification-item.medium {
+  border-left: 4px solid #fd7e14;
+}
+
+.notification-panel .notification-item.low {
+  border-left: 4px solid #17a2b8;
+}
+
+.notification-panel .notification-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.notification-panel .notification-message {
+  font-size: 13px;
+  color: #666;
+  line-height: 1.4;
+  margin-bottom: 6px;
+}
+
+.notification-panel .notification-time {
+  font-size: 11px;
+  color: #999;
+}
+
 /* Responsive Design */
 @media (max-width: 480px) {
   .chat-shell {
@@ -232,6 +382,18 @@
   .floating-chat-toggle {
     right: 20px;
     bottom: 15px;
+  }
+
+  .floating-notification-toggle {
+    right: 90px;
+    bottom: 15px;
+  }
+
+  .notification-panel {
+    width: calc(100vw - 20px);
+    right: 10px;
+    left: 10px;
+    bottom: 80px;
   }
 }
   

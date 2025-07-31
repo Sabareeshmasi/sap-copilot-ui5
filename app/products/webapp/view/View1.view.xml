@@ -87,11 +87,12 @@
                                   state="Success"/>
                     <ObjectNumber id="stockNumber"
                                   number="{UnitsInStock}"
-                                  state="Success"/>
+                                  unit="units"
+                                  state="{path: 'UnitsInStock', formatter: '.formatStockState'}"/>
                     <Text id="categoryText" text="Category {CategoryID}"/>
                     <ObjectStatus id="statusObject"
-                                  text="Available"
-                                  state="Success"/>
+                                  text="{path: 'UnitsInStock', formatter: '.formatStockStatus'}"
+                                  state="{path: 'UnitsInStock', formatter: '.formatStockState'}"/>
                     <Text id="descriptionText" text="{Description}" maxLines="2"/>
                   </cells>
                 </ColumnListItem>
@@ -109,8 +110,20 @@
         press=".onToggleChat"
         class="floating-chat-toggle" />
 
+      <!-- Floating Notification Button -->
+      <Button
+        id="notificationToggleBtn"
+        icon="sap-icon://bell"
+        tooltip="View Notifications"
+        press=".onToggleNotifications"
+        class="floating-notification-toggle"
+        text="{notifications>/unreadCount}" />
+
       <!-- ChatShell Placeholder -->
       <core:HTML id="chatShellContainer" content="" />
+
+      <!-- Notification Panel Placeholder -->
+      <core:HTML id="notificationPanelContainer" content="" />
     </content>
   </Page>
 </mvc:View>

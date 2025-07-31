@@ -62,6 +62,21 @@ const INTENTS = {
     ],
     confidence: 0.85
   },
+
+  ALERT_REQUEST: {
+    keywords: ["notify", "alert", "warn", "notification", "monitor", "watch", "threshold"],
+    patterns: [
+      /notify\s+(me\s+)?when/i,
+      /alert\s+(me\s+)?if/i,
+      /warn\s+(me\s+)?when/i,
+      /monitor\s+(\w+)/i,
+      /watch\s+for/i,
+      /set\s+(up\s+)?alert/i,
+      /create\s+(a\s+)?notification/i,
+      /threshold\s+for/i
+    ],
+    confidence: 0.9
+  },
   
   HELP_REQUEST: {
     keywords: ["help", "how", "what can", "assist", "support"],
