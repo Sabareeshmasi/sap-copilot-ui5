@@ -1,3 +1,11 @@
-ID;CompanyName;ContactName;Country
-ALFKI;Alfreds Futterkiste;Maria Anders;Germany
-ANATR;Ana Trujillo Emparedados y helados;Ana Trujillo;Mexico
+ID;CompanyName;ContactName;ContactTitle;Address;City;Region;PostalCode;Country;Phone;Fax;Email;CreatedAt;ModifiedAt
+1;Alfreds Futterkiste;Maria Anders;Sales Representative;Obere Str. 57;Berlin;;12209;Germany;030-0074321;030-0076545;maria.anders@alfreds.de;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+2;Ana Trujillo Emparedados y helados;Ana Trujillo;Owner;Avda. de la Constitución 2222;México D.F.;;05021;Mexico;(5) 555-4729;(5) 555-3745;ana.trujillo@emparedados.mx;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+3;Antonio Moreno Taquería;Antonio Moreno;Owner;Mataderos 2312;México D.F.;;05023;Mexico;(5) 555-3932;;antonio.moreno@taqueria.mx;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+4;Around the Horn;Thomas Hardy;Sales Representative;120 Hanover Sq.;London;;WA1 1DP;UK;(171) 555-7788;(171) 555-6750;thomas.hardy@aroundthehorn.co.uk;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+5;Berglunds snabbköp;Christina Berglund;Order Administrator;Berguvsvägen 8;Luleå;;S-958 22;Sweden;0921-12 34 65;0921-12 34 67;christina.berglund@berglunds.se;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+6;Blauer See Delikatessen;Hanna Moos;Sales Representative;Forsterstr. 57;Mannheim;;68306;Germany;0621-08460;0621-08924;hanna.moos@blauersee.de;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+7;Blondel père et fils;Frédérique Citeaux;Marketing Manager;24, place Kléber;Strasbourg;;67000;France;88.60.15.31;88.60.15.32;frederique.citeaux@blondel.fr;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+8;Bólido Comidas preparadas;Martín Sommer;Owner;C/ Araquil, 67;Madrid;;28023;Spain;(91) 555 22 82;(91) 555 91 99;martin.sommer@bolido.es;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+9;Bon app';Laurence Lebihans;Owner;12, rue des Bouchers;Marseille;;13008;France;91.24.45.40;91.24.45.41;laurence.lebihans@bonapp.fr;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+10;Bottom-Dollar Marketse;Elizabeth Lincoln;Accounting Manager;23 Tsawassen Blvd.;Tsawassen;BC;T2F 8M4;Canada;(604) 555-4729;(604) 555-3745;elizabeth.lincoln@bottomdollar.ca;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z

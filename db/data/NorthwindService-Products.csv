@@ -1,3 +1,21 @@
-ID;ProductName;QuantityPerUnit;UnitPrice
-1;Chai;10 boxes x 20 bags;18.00
-2;Chang;24 - 12 oz bottles;19.00
+ID;ProductName;QuantityPerUnit;UnitPrice;UnitsInStock;UnitsOnOrder;ReorderLevel;Discontinued;CategoryID;SupplierID;Description;CreatedAt;ModifiedAt
+1;Chai;10 boxes x 20 bags;18.00;39;0;10;false;1;1;A delicious tea blend with exotic spices;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+2;Chang;24 - 12 oz bottles;19.00;17;40;25;false;1;1;Traditional Chinese beer with a smooth taste;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+3;Aniseed Syrup;12 - 550 ml bottles;10.00;13;70;25;false;2;1;Sweet syrup with aniseed flavor for desserts;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+4;Chef Anton's Cajun Seasoning;48 - 6 oz jars;22.00;53;0;0;false;2;2;Authentic Cajun spice blend from Louisiana;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+5;Chef Anton's Gumbo Mix;36 boxes;21.35;0;0;0;true;2;2;Traditional gumbo mix for authentic taste;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+6;Grandma's Boysenberry Spread;12 - 8 oz jars;25.00;120;0;25;false;2;3;Homemade boysenberry spread with natural ingredients;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+7;Uncle Bob's Organic Dried Pears;12 - 1 lb pkgs;30.00;15;0;10;false;7;3;Organic dried pears from sustainable farms;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+8;Northwoods Cranberry Sauce;12 - 12 oz jars;40.00;6;0;0;false;2;3;Premium cranberry sauce with whole berries;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+9;Mishi Kobe Niku;18 - 500 g pkgs;97.00;29;0;0;true;6;4;Premium Kobe beef from Japan;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+10;Ikura;12 - 200 ml jars;31.00;31;0;0;false;8;4;Fresh salmon roe delicacy;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+11;Queso Cabrales;1 kg pkg;21.00;22;30;30;false;4;5;Spanish blue cheese aged in caves;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+12;Queso Manchego La Pastora;10 - 500 g pkgs;38.00;86;0;0;false;4;5;Traditional Spanish sheep cheese;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+13;Konbu;2 kg box;6.00;24;0;5;false;8;6;Premium Japanese seaweed for cooking;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+14;Tofu;40 - 100 g pkgs;23.25;35;0;0;false;7;6;Fresh organic tofu high in protein;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+15;Genen Shouyu;24 - 250 ml bottles;15.50;39;0;5;false;2;6;Traditional Japanese soy sauce;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+16;Pavlova;32 - 500 g boxes;17.45;29;0;10;false;3;7;Light meringue dessert with fruit;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+17;Alice Mutton;20 - 1 kg tins;39.00;0;0;0;true;6;7;Premium lamb from New Zealand;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+18;Carnarvon Tigers;16 kg pkg;62.50;42;0;0;false;8;7;Fresh tiger prawns from Australia;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+19;Teatime Chocolate Biscuits;10 boxes x 12 pieces;9.20;25;0;5;false;3;8;Traditional British tea biscuits;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z
+20;Sir Rodney's Marmalade;30 gift boxes;81.00;40;0;0;false;3;8;Premium orange marmalade in gift packaging;2024-01-01T00:00:00Z;2024-01-01T00:00:00Z

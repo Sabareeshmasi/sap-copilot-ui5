@@ -23,7 +23,7 @@
     "mbt": "^1.2.29"
   },
   "scripts": {
-    "start": "cds-serve",
+    "start":"node server.js",
     "watch-products": "cds watch --open products/webapp/index.html?sap-ui-xx-viewCache=false",
     "undeploy": "cf undeploy sap-copilot --delete-services --delete-service-keys --delete-service-brokers",
     "build": "rimraf resources mta_archives && mbt build --mtar archive",

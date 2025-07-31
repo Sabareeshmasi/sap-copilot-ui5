@@ -1,3 +1,16 @@
-ID;CustomerID;OrderDate;ShipCountry
-10248;ALFKI;1996-07-04;Germany
-10249;ANATR;1996-07-05;Mexico
+ID;CustomerID;EmployeeID;OrderDate;RequiredDate;ShippedDate;ShipVia;Freight;ShipName;ShipAddress;ShipCity;ShipRegion;ShipPostalCode;ShipCountry;Status;CreatedAt;ModifiedAt
+1;1;5;2024-07-04;2024-08-01;2024-07-16;3;32.38;Alfreds Futterkiste;Obere Str. 57;Berlin;;12209;Germany;Shipped;2024-07-04T00:00:00Z;2024-07-16T00:00:00Z
+2;2;6;2024-07-05;2024-08-16;2024-07-10;1;11.61;Ana Trujillo Emparedados y helados;Avda. de la Constitución 2222;México D.F.;;05021;Mexico;Shipped;2024-07-05T00:00:00Z;2024-07-10T00:00:00Z
+3;3;4;2024-07-08;2024-08-05;2024-07-12;3;65.83;Antonio Moreno Taquería;Mataderos 2312;México D.F.;;05023;Mexico;Shipped;2024-07-08T00:00:00Z;2024-07-12T00:00:00Z
+4;4;3;2024-07-08;2024-08-05;2024-07-15;1;41.34;Around the Horn;120 Hanover Sq.;London;;WA1 1DP;UK;Shipped;2024-07-08T00:00:00Z;2024-07-15T00:00:00Z
+5;5;4;2024-07-09;2024-08-06;2024-07-11;1;51.30;Berglunds snabbköp;Berguvsvägen 8;Luleå;;S-958 22;Sweden;Shipped;2024-07-09T00:00:00Z;2024-07-11T00:00:00Z
+6;6;3;2024-07-10;2024-08-07;2024-07-16;2;58.17;Blauer See Delikatessen;Forsterstr. 57;Mannheim;;68306;Germany;Shipped;2024-07-10T00:00:00Z;2024-07-16T00:00:00Z
+7;7;5;2024-07-11;2024-08-08;2024-07-15;1;22.98;Blondel père et fils;24, place Kléber;Strasbourg;;67000;France;Shipped;2024-07-11T00:00:00Z;2024-07-15T00:00:00Z
+8;8;9;2024-07-12;2024-08-09;2024-07-15;2;148.33;Bólido Comidas preparadas;C/ Araquil, 67;Madrid;;28023;Spain;Shipped;2024-07-12T00:00:00Z;2024-07-15T00:00:00Z
+9;9;2;2024-07-15;2024-08-12;2024-07-16;3;13.97;Bon app';12, rue des Bouchers;Marseille;;13008;France;Shipped;2024-07-15T00:00:00Z;2024-07-16T00:00:00Z
+10;10;4;2024-07-16;2024-08-13;;1;81.91;Bottom-Dollar Marketse;23 Tsawassen Blvd.;Tsawassen;BC;T2F 8M4;Canada;Processing;2024-07-16T00:00:00Z;2024-07-16T00:00:00Z
+11;1;1;2024-07-18;2024-08-15;;2;140.51;Alfreds Futterkiste;Obere Str. 57;Berlin;;12209;Germany;Processing;2024-07-18T00:00:00Z;2024-07-18T00:00:00Z
+12;2;5;2024-07-19;2024-08-16;;3;3.25;Ana Trujillo Emparedados y helados;Avda. de la Constitución 2222;México D.F.;;05021;Mexico;Pending;2024-07-19T00:00:00Z;2024-07-19T00:00:00Z
+13;3;6;2024-07-22;2024-08-19;;1;55.09;Antonio Moreno Taquería;Mataderos 2312;México D.F.;;05023;Mexico;Pending;2024-07-22T00:00:00Z;2024-07-22T00:00:00Z
+14;4;8;2024-07-23;2024-08-20;;2;25.73;Around the Horn;120 Hanover Sq.;London;;WA1 1DP;UK;Pending;2024-07-23T00:00:00Z;2024-07-23T00:00:00Z
+15;5;4;2024-07-25;2024-08-22;;1;208.58;Berglunds snabbköp;Berguvsvägen 8;Luleå;;S-958 22;Sweden;Pending;2024-07-25T00:00:00Z;2024-07-25T00:00:00Z

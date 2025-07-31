@@ -4,32 +4,101 @@
   xmlns="sap.m"
   xmlns:core="sap.ui.core">
 
-  <Page id="page" title="Product List">
+  <Page id="page" title="{i18n>title}" showNavButton="false">
     <content>
-      <VBox id="mainVBox" class="sapUiSmallMargin">
-        <!-- Search Bar -->
-        <SearchField
-          id="productSearch"
-          placeholder="Search by Product Name"
-          search=".onSearch" />
+      <VBox id="mainVBox" class="sapUiMediumMargin">
+        <!-- Header Section -->
+        <Panel id="headerPanel" class="sapUiResponsiveMargin" width="auto">
+          <content>
+            <VBox id="headerVBox">
+              <Title id="welcomeTitle" text="SAP Copilot - Product Management" level="H2" class="sapUiMediumMarginBottom"/>
+              <Text id="welcomeText" text="Manage your product catalog with AI-powered assistance. Use the search below or ask the Copilot for help." class="sapUiSmallMarginBottom"/>
+            </VBox>
+          </content>
+        </Panel>
+
+        <!-- Search and Filter Section -->
+        <Panel id="searchPanel" class="sapUiResponsiveMargin" width="auto" headerText="Search &amp; Filter">
+          <content>
+            <HBox id="searchBox" alignItems="Center" class="sapUiSmallMargin">
+              <SearchField
+                id="productSearch"
+                placeholder="Search by Product Name, Description, or Category"
+                search=".onSearch"
+                width="300px"
+                class="sapUiSmallMarginEnd" />
+              <Button id="clearSearchBtn" text="Clear" press=".onClearSearch" class="sapUiSmallMarginEnd"/>
+              <ToolbarSpacer id="searchSpacer"/>
+              <Text id="resultCount" text="Products loaded" class="sapUiSmallMarginEnd"/>
+            </HBox>
+          </content>
+        </Panel>
 
         <!-- Product Table -->
-        <Table id="productTable" items="{path: '/Products'}">
-          <columns>
-            <Column id="_IDGenColumn"><Text id="_IDGenText" text="ID" /></Column>
-            <Column id="_IDGenColumn1"><Text id="_IDGenText1" text="Product Name" /></Column>
-            <Column id="_IDGenColumn2"><Text id="_IDGenText2" text="Unit Price" /></Column>
-          </columns>
-          <items>
-            <ColumnListItem id="_IDGenColumnListItem1">
-              <cells>
-                <Text id="_IDGenText3" text="{ID}" />
-                <Text id="_IDGenText4" text="{ProductName}" />
-                <Text id="_IDGenText5" text="{UnitPrice}" />
-              </cells>
-            </ColumnListItem>
-          </items>
-        </Table>
+        <Panel id="tablePanel" class="sapUiResponsiveMargin" width="auto" headerText="Product Catalog">
+          <content>
+            <Table id="productTable"
+                   items="{path: '/Products'}"
+                   growing="true"
+                   growingThreshold="20"
+                   mode="SingleSelect"
+                   class="sapUiResponsiveMargin">
+              <headerToolbar>
+                <Toolbar id="tableToolbar">
+                  <Title id="tableTitle" text="Products" level="H3"/>
+                  <ToolbarSpacer id="tableSpacer"/>
+                  <Button id="refreshBtn" icon="sap-icon://refresh" tooltip="Refresh Data" press=".onRefresh"/>
+                </Toolbar>
+              </headerToolbar>
+              <columns>
+                <Column id="idColumn" width="60px">
+                  <Text id="idColumnText" text="ID" />
+                </Column>
+                <Column id="nameColumn" width="200px">
+                  <Text id="nameColumnText" text="Product Name" />
+                </Column>
+                <Column id="priceColumn" width="100px">
+                  <Text id="priceColumnText" text="Unit Price" />
+                </Column>
+                <Column id="stockColumn" width="100px">
+                  <Text id="stockColumnText" text="In Stock" />
+                </Column>
+                <Column id="categoryColumn" width="120px">
+                  <Text id="categoryColumnText" text="Category" />
+                </Column>
+                <Column id="statusColumn" width="100px">
+                  <Text id="statusColumnText" text="Status" />
+                </Column>
+                <Column id="descriptionColumn" minScreenWidth="Tablet" demandPopin="true">
+                  <Text id="descriptionColumnText" text="Description" />
+                </Column>
+              </columns>
+              <items>
+                <ColumnListItem id="productListItem" press=".onProductSelect">
+                  <cells>
+                    <Text id="idText" text="{ID}" />
+                    <VBox id="nameBox">
+                      <Text id="nameText" text="{ProductName}" class="sapUiMediumMarginBottom"/>
+                      <Text id="quantityText" text="{QuantityPerUnit}" class="sapUiTinyText"/>
+                    </VBox>
+                    <ObjectNumber id="priceNumber"
+                                  number="{UnitPrice}"
+                                  unit="USD"
+                                  state="Success"/>
+                    <ObjectNumber id="stockNumber"
+                                  number="{UnitsInStock}"
+                                  state="Success"/>
+                    <Text id="categoryText" text="Category {CategoryID}"/>
+                    <ObjectStatus id="statusObject"
+                                  text="Available"
+                                  state="Success"/>
+                    <Text id="descriptionText" text="{Description}" maxLines="2"/>
+                  </cells>
+                </ColumnListItem>
+              </items>
+            </Table>
+          </content>
+        </Panel>
       </VBox>
 
       <!-- Floating ChatShell Button -->

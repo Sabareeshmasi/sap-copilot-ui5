@@ -1,6 +1,55 @@
-POST /gemini-service/interpretPrompt
+### Test Enhanced Gemini Service - Data Query
+POST http://localhost:4004/gemini-service/prompt
 Content-Type: application/json
 
 {
-  "prompt": "Show products under $20"
+  "prompt": "Show me all products under $20"
+}
+
+### Test Business Context Understanding
+POST http://localhost:4004/gemini-service/prompt
+Content-Type: application/json
+
+{
+  "prompt": "Find beverages in stock"
+}
+
+### Test Customer Query
+POST http://localhost:4004/gemini-service/prompt
+Content-Type: application/json
+
+{
+  "prompt": "List customers from Germany"
+}
+
+### Test Help Request
+POST http://localhost:4004/gemini-service/prompt
+Content-Type: application/json
+
+{
+  "prompt": "What can you help me with?"
+}
+
+### Test Create Operation (Not yet implemented)
+POST http://localhost:4004/gemini-service/prompt
+Content-Type: application/json
+
+{
+  "prompt": "Create a new order for customer 1"
+}
+
+### Test Complex Query
+POST http://localhost:4004/gemini-service/prompt
+Content-Type: application/json
+
+{
+  "prompt": "Show me the top 5 most expensive products"
+}
+
+### Test Date-based Query
+POST http://localhost:4004/gemini-service/prompt
+Content-Type: application/json
+
+{
+  "prompt": "Show orders from last month"
 }
