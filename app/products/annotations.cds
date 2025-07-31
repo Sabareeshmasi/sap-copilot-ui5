@@ -1,1 +1,1 @@
-using NorthwindService as service from '../../srv/northwind-service';
+using CatalogService from '../../srv/service';

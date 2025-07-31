@@ -1,0 +1,6 @@
+POST /gemini-service/interpretPrompt
+Content-Type: application/json
+
+{
+  "prompt": "Show products under $20"
+}
