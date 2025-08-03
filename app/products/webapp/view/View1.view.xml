@@ -41,7 +41,7 @@
                    items="{path: '/Products'}"
                    growing="true"
                    growingThreshold="20"
-                   mode="SingleSelect"
+                   mode="SingleSelectLeft"
                    class="sapUiResponsiveMargin">
               <headerToolbar>
                 <Toolbar id="tableToolbar">
