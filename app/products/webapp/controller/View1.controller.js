@@ -38,7 +38,7 @@ sap.ui.define([
         window.sapCopilotController = this;
 
         // Initialize conversation with welcome message
-        this._addSystemMessage("Hello! I'm your SAP Copilot assistant. I can help you with product queries, customer information, and business data analysis. Try asking me something like 'Show me all products under $20' or 'List customers from Germany'.");
+        this._addSystemMessage("Hello! I'm your SAP Copilot assistant with enhanced Business Intelligence capabilities. I can help you with:\n\n📊 **Business Intelligence**: 'What's our average product price?', 'How many products are low stock?'\n📈 **Analytics**: 'Show me price trends', 'Analyze stock efficiency'\n🔍 **Product Queries**: 'Show me products under $20', 'List low stock items'\n💰 **Financial Analysis**: 'What's our total inventory value?', 'Show revenue potential'\n\nTry asking me anything about your business data!");
 
         // Initialize WebSocket for real-time notifications
         this._initializeNotificationSocket();
@@ -51,11 +51,42 @@ sap.ui.define([
         const sQuery = oEvent.getParameter("query");
         const oTable = this.byId("productTable");
         const oBinding = oTable.getBinding("items");
-  
-        if (sQuery) {
-          const oFilter = new Filter("ProductName", FilterOperator.Contains, sQuery);
-          oBinding.filter([oFilter]);
+
+        console.log(`🔍 Search triggered with query: "${sQuery}"`);
+        console.log(`🔍 Table binding:`, oBinding);
+
+        if (sQuery && sQuery.trim()) {
+          // Create multiple filters for case-insensitive search
+          // We'll use multiple variations to catch different cases
+          const sLowerQuery = sQuery.toLowerCase();
+          const sUpperQuery = sQuery.toUpperCase();
+          const sCapitalQuery = sQuery.charAt(0).toUpperCase() + sQuery.slice(1).toLowerCase();
+
+          const aFilters = [
+            // Original case
+            new Filter("ProductName", FilterOperator.Contains, sQuery),
+            new Filter("Description", FilterOperator.Contains, sQuery),
+            // Lowercase
+            new Filter("ProductName", FilterOperator.Contains, sLowerQuery),
+            new Filter("Description", FilterOperator.Contains, sLowerQuery),
+            // Uppercase
+            new Filter("ProductName", FilterOperator.Contains, sUpperQuery),
+            new Filter("Description", FilterOperator.Contains, sUpperQuery),
+            // Capitalized
+            new Filter("ProductName", FilterOperator.Contains, sCapitalQuery),
+            new Filter("Description", FilterOperator.Contains, sCapitalQuery)
+          ];
+
+          // Combine all filters with OR logic
+          const oCombinedFilter = new Filter({
+            filters: aFilters,
+            and: false // OR logic - any match will show the item
+          });
+
+          console.log(`🔍 Applying filters for: "${sQuery}", "${sLowerQuery}", "${sUpperQuery}", "${sCapitalQuery}"`);
+          oBinding.filter([oCombinedFilter]);
         } else {
+          console.log("🔍 Clearing search filters");
           oBinding.filter([]);
         }
       },
@@ -69,12 +100,22 @@ sap.ui.define([
             <div class="chat-shell" id="copilotShell">
               <div class="chat-header">
                 <h3>SAP Copilot</h3>
-                <button onclick="window.sapCopilotController.onCloseChat()" class="close-btn">×</button>
+                <button onclick="window.sapCopilotController.onCloseChat(event)" class="close-btn" title="Minimize to notification">−</button>
               </div>
               <div class="chat-box" id="chatMessages">
                 <div class="chat-message system-message">
                   <span class="sender">Copilot:</span>
-                  Hello! I'm your SAP Copilot assistant. I can help you with product information, data analysis, and answer questions about your business data. How can I assist you today?
+                  Hello! I'm your SAP Copilot assistant with enhanced Business Intelligence capabilities. I can help you with:
+                  <br><br>
+                  📊 <strong>Business Intelligence</strong>: "What's our average product price?", "How many products are low stock?"
+                  <br>
+                  📈 <strong>Analytics</strong>: "Show me price trends", "Analyze stock efficiency"
+                  <br>
+                  🔍 <strong>Product Queries</strong>: "Show me products under $20", "List low stock items"
+                  <br>
+                  💰 <strong>Financial Analysis</strong>: "What's our total inventory value?", "Show revenue potential"
+                  <br><br>
+                  Try asking me anything about your business data!
                 </div>
               </div>
               <div class="chat-input">
@@ -108,18 +149,75 @@ sap.ui.define([
       },
 
       /**
-       * Close chat panel (dedicated close function)
+       * Minimize chat panel (notification-style minimize)
        */
-      onCloseChat: function() {
-        const oHTMLContainer = this.byId("chatShellContainer");
-        const oChatModel = this.getView().getModel("chat");
+      onCloseChat: function(event) {
+        console.log("🔧 onCloseChat called");
 
-        // Always close the chat
-        oHTMLContainer.setContent("");
-        this._bChatVisible = false;
-        oChatModel.setProperty("/isVisible", false);
+        // Prevent event bubbling to avoid immediate restore
+        if (event) {
+          event.stopPropagation();
+          event.preventDefault();
+        }
 
-        console.log("💬 Chat panel closed");
+        const chatShell = document.getElementById("copilotShell");
+        console.log("🔧 chatShell element:", chatShell);
+
+        if (chatShell) {
+          if (chatShell.classList.contains("minimized")) {
+            // If already minimized, restore it
+            chatShell.classList.remove("minimized");
+            this._removeHeaderClickHandler();
+            console.log("💬 Chat panel restored");
+          } else {
+            // Minimize with animation
+            chatShell.classList.add("minimized");
+            console.log("💬 Chat panel minimized - class added");
+
+            // Add click handler to header for restore (with delay to avoid immediate trigger)
+            setTimeout(() => {
+              this._addHeaderClickHandler();
+            }, 100);
+          }
+        } else {
+          console.error("❌ Could not find copilotShell element");
+        }
+      },
+
+      /**
+       * Add click handler to header for restoring minimized chat
+       */
+      _addHeaderClickHandler: function() {
+        const chatShell = document.getElementById("copilotShell");
+        const header = chatShell?.querySelector(".chat-header");
+
+        if (header && !header._hasClickHandler) {
+          header._clickHandler = (event) => {
+            event.stopPropagation();
+            chatShell.classList.remove("minimized");
+            this._removeHeaderClickHandler();
+            console.log("💬 Chat panel restored by clicking header");
+          };
+
+          header.addEventListener("click", header._clickHandler);
+          header._hasClickHandler = true;
+          console.log("🔧 Header click handler added");
+        }
+      },
+
+      /**
+       * Remove click handler from header
+       */
+      _removeHeaderClickHandler: function() {
+        const chatShell = document.getElementById("copilotShell");
+        const header = chatShell?.querySelector(".chat-header");
+
+        if (header && header._clickHandler) {
+          header.removeEventListener("click", header._clickHandler);
+          header._hasClickHandler = false;
+          header._clickHandler = null;
+          console.log("🔧 Header click handler removed");
+        }
       },
 
       submitChat: async function() {
@@ -720,8 +818,12 @@ sap.ui.define([
         const oTable = this.byId("productTable");
         const oBinding = oTable.getBinding("items");
 
+        // Clear the search field
         oSearchField.setValue("");
+
+        // Clear all filters
         oBinding.filter([]);
+        console.log("🔍 Search cleared - removed all filters");
       },
 
       onRefresh: function() {

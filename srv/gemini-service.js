@@ -131,12 +131,12 @@ module.exports = cds.service.impl(async function () {
         return await this.handleAlertRequest(rawPrompt, analysis, startTime);
       }
 
-      // Handle ALL queries with AI - provide relevant data as context
+      // Handle ALL queries with enhanced AI - natural language processing
       try {
-        console.log(`🤖 Processing ALL queries with AI: "${rawPrompt}"`);
-        return await this.handleUniversalAIQuery(rawPrompt, analysis, startTime);
+        console.log(`🤖 Processing query with enhanced AI: "${rawPrompt}"`);
+        return await this.handleNaturalLanguageQuery(rawPrompt, analysis, startTime);
       } catch (handlerError) {
-        console.error("❌ Error in intent handler:", handlerError);
+        console.error("❌ Error in AI handler:", handlerError);
         // Final fallback to simple response
         return {
           reply: `I encountered an error while processing your request: ${handlerError.message}. Please try a simpler query or ask for help.`,
@@ -337,9 +337,312 @@ Ready to help! What would you like to explore?
   };
 
   /**
+   * Handle natural language queries with enhanced AI understanding
+   */
+  this.handleNaturalLanguageQuery = async function(prompt, analysis, startTime) {
+    try {
+      console.log(`🧠 Natural language processing: "${prompt}"`);
+
+      // Get comprehensive business data for context
+      const businessData = await this.getComprehensiveBusinessData();
+
+      // Analyze the query intent and extract key information
+      const queryAnalysis = this.analyzeQueryIntent(prompt);
+      console.log(`🔍 Query analysis:`, queryAnalysis);
+
+      // If it's a simple product listing request, handle directly
+      if (queryAnalysis.isProductListing) {
+        return await this.handleProductListingQuery(prompt, businessData, startTime);
+      }
+
+      // If it's a specific business question, handle with AI
+      if (queryAnalysis.isBusinessQuestion) {
+        return await this.handleBusinessQuestionWithAI(prompt, businessData, startTime);
+      }
+
+      // For complex queries, use full AI processing
+      return await this.handleComplexQueryWithAI(prompt, businessData, startTime);
+
+    } catch (error) {
+      console.error("❌ Error in natural language processing:", error);
+      return {
+        reply: `I encountered an error while understanding your question: ${error.message}. Could you please rephrase your question?`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
+   * Get comprehensive business data for AI context
+   */
+  this.getComprehensiveBusinessData = async function() {
+    try {
+      const db = await cds.connect.to('db');
+      const { Products, Customers } = db.entities;
+
+      // Get all products with calculated fields
+      const products = await db.run(SELECT.from(Products));
+      const customers = await db.run(SELECT.from(Customers).limit(10));
+
+      // Calculate business metrics
+      const metrics = {
+        totalProducts: products.length,
+        averagePrice: products.reduce((sum, p) => sum + (p.UnitPrice || 0), 0) / products.length,
+        totalInventoryValue: products.reduce((sum, p) => sum + ((p.UnitPrice || 0) * (p.UnitsInStock || 0)), 0),
+        lowStockCount: products.filter(p => (p.UnitsInStock || 0) < 10 && (p.UnitsInStock || 0) > 0).length,
+        outOfStockCount: products.filter(p => (p.UnitsInStock || 0) === 0).length,
+        highestPrice: Math.max(...products.map(p => p.UnitPrice || 0)),
+        lowestPrice: Math.min(...products.map(p => p.UnitPrice || 0))
+      };
+
+      return {
+        products,
+        customers,
+        metrics
+      };
+    } catch (error) {
+      console.error("❌ Error getting business data:", error);
+      return { products: [], customers: [], metrics: {} };
+    }
+  };
+
+  /**
+   * Analyze query intent and extract key information
+   */
+  this.analyzeQueryIntent = function(prompt) {
+    const lowerPrompt = prompt.toLowerCase();
+
+    // Product listing patterns
+    const productListingPatterns = [
+      /what.*products.*available/i,
+      /show.*products/i,
+      /list.*products/i,
+      /what.*do.*you.*have/i,
+      /what.*items/i,
+      /display.*products/i
+    ];
+
+    // Business question patterns
+    const businessQuestionPatterns = [
+      /how.*many/i,
+      /what.*average/i,
+      /what.*total/i,
+      /which.*most/i,
+      /which.*least/i,
+      /what.*highest/i,
+      /what.*lowest/i
+    ];
+
+    const isProductListing = productListingPatterns.some(pattern => pattern.test(prompt));
+    const isBusinessQuestion = businessQuestionPatterns.some(pattern => pattern.test(prompt));
+
+    return {
+      isProductListing,
+      isBusinessQuestion,
+      originalPrompt: prompt,
+      lowerPrompt
+    };
+  };
+
+  /**
+   * Handle simple product listing queries
+   */
+  this.handleProductListingQuery = async function(prompt, businessData, startTime) {
+    try {
+      const { products, metrics } = businessData;
+
+      let responseText = `📦 **Available Products** (${products.length} total):\n\n`;
+
+      // Show first 10 products with key details
+      const displayProducts = products.slice(0, 10);
+      displayProducts.forEach((product, index) => {
+        const stockStatus = (product.UnitsInStock || 0) === 0 ? '❌ Out of Stock' :
+                           (product.UnitsInStock || 0) < 10 ? '⚠️ Low Stock' : '✅ Available';
+
+        responseText += `**${index + 1}. ${product.ProductName}**\n`;
+        responseText += `   💰 Price: $${product.UnitPrice || 0}\n`;
+        responseText += `   📦 Stock: ${product.UnitsInStock || 0} units ${stockStatus}\n`;
+        if (product.Description) {
+          responseText += `   📝 ${product.Description}\n`;
+        }
+        responseText += `\n`;
+      });
+
+      if (products.length > 10) {
+        responseText += `... and ${products.length - 10} more products.\n\n`;
+      }
+
+      // Add quick insights
+      responseText += `💡 **Quick Insights:**\n`;
+      responseText += `• Average Price: $${metrics.averagePrice?.toFixed(2) || 0}\n`;
+      responseText += `• Price Range: $${metrics.lowestPrice} - $${metrics.highestPrice}\n`;
+      responseText += `• Low Stock Items: ${metrics.lowStockCount}\n`;
+      responseText += `• Out of Stock: ${metrics.outOfStockCount}\n\n`;
+      responseText += `Ask me: "What's our most expensive product?" or "Show me low stock items"`;
+
+      return {
+        reply: responseText,
+        success: true,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime,
+        type: "product_listing",
+        data: { products: displayProducts, metrics }
+      };
+
+    } catch (error) {
+      console.error("❌ Error in product listing:", error);
+      return {
+        reply: `I encountered an error while getting the product list: ${error.message}`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
+   * Handle business questions with AI assistance
+   */
+  this.handleBusinessQuestionWithAI = async function(prompt, businessData, startTime) {
+    try {
+      console.log(`💼 Processing business question with AI: "${prompt}"`);
+
+      const { products, metrics } = businessData;
+
+      // Create enhanced prompt for AI with business context
+      const enhancedPrompt = `You are SAP Copilot, an intelligent business assistant. Answer the user's question naturally and conversationally using the provided business data.
+
+BUSINESS DATA CONTEXT:
+- Total Products: ${metrics.totalProducts}
+- Average Price: $${metrics.averagePrice?.toFixed(2)}
+- Total Inventory Value: $${metrics.totalInventoryValue?.toFixed(2)}
+- Low Stock Items: ${metrics.lowStockCount}
+- Out of Stock Items: ${metrics.outOfStockCount}
+- Price Range: $${metrics.lowestPrice} - $${metrics.highestPrice}
+
+SAMPLE PRODUCTS:
+${products.slice(0, 5).map(p => `- ${p.ProductName}: $${p.UnitPrice}, Stock: ${p.UnitsInStock} units`).join('\n')}
+
+USER QUESTION: "${prompt}"
+
+Provide a natural, conversational response that directly answers their question. Use emojis and formatting to make it engaging. If they ask about products, provide specific examples. Be helpful and informative.
+
+RESPONSE:`;
+
+      // Call AI service
+      if (COHERE_KEY) {
+        try {
+          const response = await axios.post(
+            COHERE_URL,
+            {
+              model: "command",
+              message: enhancedPrompt,
+              max_tokens: 1000,
+              temperature: 0.7
+            },
+            {
+              timeout: 15000,
+              headers: {
+                'Authorization': `Bearer ${COHERE_KEY}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+
+          const aiResponse = response.data?.text?.trim();
+          if (aiResponse) {
+            return {
+              reply: aiResponse,
+              success: true,
+              timestamp: new Date().toISOString(),
+              processingTime: Date.now() - startTime,
+              type: "ai_business_response",
+              data: { metrics, sampleProducts: products.slice(0, 5) }
+            };
+          }
+        } catch (aiError) {
+          console.log("⚠️ AI service failed, using intelligent fallback");
+        }
+      }
+
+      // Intelligent fallback without AI
+      return this.createIntelligentBusinessResponse(prompt, businessData, startTime);
+
+    } catch (error) {
+      console.error("❌ Error in business question handler:", error);
+      return {
+        reply: `I encountered an error while processing your business question: ${error.message}`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
+   * Handle complex queries with full AI processing
+   */
+  this.handleComplexQueryWithAI = async function(prompt, businessData, startTime) {
+    try {
+      console.log(`🧠 Processing complex query with full AI: "${prompt}"`);
+
+      // Use the existing universal AI handler with enhanced context
+      return await this.handleUniversalAIQuery(prompt, null, startTime, businessData);
+
+    } catch (error) {
+      console.error("❌ Error in complex query handler:", error);
+      return {
+        reply: `I encountered an error while processing your complex query: ${error.message}`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
+   * Create intelligent business response without AI
+   */
+  this.createIntelligentBusinessResponse = function(prompt, businessData, startTime) {
+    const { products, metrics } = businessData;
+    const lowerPrompt = prompt.toLowerCase();
+
+    let responseText = "";
+
+    if (lowerPrompt.includes('how many')) {
+      responseText = `📊 I have access to **${metrics.totalProducts} products** in our catalog. `;
+      if (lowerPrompt.includes('stock')) {
+        responseText += `Currently, **${metrics.lowStockCount} products** have low stock (below 10 units) and **${metrics.outOfStockCount} products** are out of stock.`;
+      } else {
+        responseText += `Would you like to see the complete list or filter by specific criteria?`;
+      }
+    } else if (lowerPrompt.includes('average') && lowerPrompt.includes('price')) {
+      responseText = `💰 The average product price is **$${metrics.averagePrice?.toFixed(2)}**. Our prices range from $${metrics.lowestPrice} to $${metrics.highestPrice}.`;
+    } else if (lowerPrompt.includes('total') && lowerPrompt.includes('value')) {
+      responseText = `💎 The total inventory value is **$${metrics.totalInventoryValue?.toFixed(2)}**, calculated from all ${metrics.totalProducts} products and their current stock levels.`;
+    } else {
+      // General response
+      responseText = `📊 I have access to **${metrics.totalProducts} products** and can provide detailed analysis. `;
+      responseText += `Our inventory includes items ranging from $${metrics.lowestPrice} to $${metrics.highestPrice}. `;
+      responseText += `What specific aspect interests you? I can show you product lists, analyze pricing, check stock levels, or provide business insights.`;
+    }
+
+    return {
+      reply: responseText,
+      success: true,
+      timestamp: new Date().toISOString(),
+      processingTime: Date.now() - startTime,
+      type: "intelligent_business_response",
+      data: { metrics }
+    };
+  };
+
+  /**
    * Handle ALL queries with AI - Universal AI handler with smart data context
    */
-  this.handleUniversalAIQuery = async function(prompt, analysis, startTime) {
+  this.handleUniversalAIQuery = async function(prompt, analysis, startTime, providedBusinessData = null) {
     try {
       console.log(`🌟 Universal AI processing: "${prompt}"`);
 
@@ -352,8 +655,8 @@ Ready to help! What would you like to explore?
         return await this.handleTransactionOperation(prompt, analysis, startTime);
       }
 
-      // Get relevant business data based on the query
-      const contextData = await this.getRelevantBusinessData(prompt);
+      // Get relevant business data based on the query (use provided data if available)
+      const contextData = providedBusinessData || await this.getRelevantBusinessData(prompt);
 
       // Create comprehensive business context for AI
       const businessContext = this.createComprehensiveBusinessContext(contextData, prompt);
@@ -494,6 +797,16 @@ RESPONSE:`;
         return await this.handleComparisonQuery(prompt, startTime);
       }
 
+      // Check for business intelligence queries
+      if (this.isBusinessIntelligenceQuery(prompt)) {
+        return await this.handleBusinessIntelligenceQuery(prompt, startTime);
+      }
+
+      // Check for analytics queries
+      if (this.isAnalyticsQuery(prompt)) {
+        return await this.handleAnalyticsQuery(prompt, startTime);
+      }
+
       // Check for product queries
       if (this.isProductQuery(prompt)) {
         return await this.handleProductQuery(prompt, startTime);
@@ -618,6 +931,36 @@ RESPONSE:`;
   this.isCustomerQuery = function(prompt) {
     const customerKeywords = ['customer', 'customers', 'client', 'clients'];
     return customerKeywords.some(keyword => prompt.toLowerCase().includes(keyword));
+  };
+
+  /**
+   * Check if query is business intelligence related
+   */
+  this.isBusinessIntelligenceQuery = function(prompt) {
+    const biKeywords = [
+      'average', 'mean', 'total', 'sum', 'count', 'how many', 'how much',
+      'statistics', 'stats', 'analysis', 'analyze', 'insights', 'trends',
+      'performance', 'metrics', 'kpi', 'dashboard', 'report', 'summary',
+      'breakdown', 'distribution', 'percentage', 'ratio', 'compare',
+      'most expensive', 'cheapest', 'highest', 'lowest', 'best', 'worst',
+      'top', 'bottom', 'ranking', 'rank'
+    ];
+    const lowerPrompt = prompt.toLowerCase();
+    return biKeywords.some(keyword => lowerPrompt.includes(keyword));
+  };
+
+  /**
+   * Check if query is analytics related
+   */
+  this.isAnalyticsQuery = function(prompt) {
+    const analyticsKeywords = [
+      'forecast', 'predict', 'projection', 'trend', 'growth', 'decline',
+      'correlation', 'pattern', 'seasonal', 'monthly', 'quarterly', 'yearly',
+      'revenue', 'profit', 'margin', 'cost', 'efficiency', 'optimization',
+      'benchmark', 'variance', 'deviation', 'outlier', 'anomaly'
+    ];
+    const lowerPrompt = prompt.toLowerCase();
+    return analyticsKeywords.some(keyword => lowerPrompt.includes(keyword));
   };
 
   /**
@@ -1145,6 +1488,308 @@ RESPONSE:`;
   };
 
   /**
+   * Handle business intelligence queries
+   */
+  this.handleBusinessIntelligenceQuery = async function(prompt, startTime) {
+    try {
+      console.log(`📊 Processing business intelligence query: "${prompt}"`);
+
+      const db = await cds.connect.to('db');
+      const { Products } = db.entities;
+
+      // Get all products for analysis
+      const allProducts = await db.run(SELECT.from(Products));
+
+      const lowerPrompt = prompt.toLowerCase();
+      let result = {};
+      let responseText = "";
+
+      // Average price queries
+      if (lowerPrompt.includes('average') && lowerPrompt.includes('price')) {
+        const avgPrice = allProducts.reduce((sum, p) => sum + (p.Price || 0), 0) / allProducts.length;
+        result.averagePrice = avgPrice.toFixed(2);
+        responseText = `📊 **Average Product Price**: $${result.averagePrice} USD\n\nBased on ${allProducts.length} products in our catalog.`;
+      }
+
+      // Total value queries
+      else if (lowerPrompt.includes('total') && (lowerPrompt.includes('value') || lowerPrompt.includes('inventory'))) {
+        const totalValue = allProducts.reduce((sum, p) => sum + ((p.Price || 0) * (p.InStock || 0)), 0);
+        result.totalInventoryValue = totalValue.toFixed(2);
+        responseText = `💰 **Total Inventory Value**: $${result.totalInventoryValue} USD\n\nCalculated from ${allProducts.length} products and their current stock levels.`;
+      }
+
+      // Count queries
+      else if (lowerPrompt.includes('how many') || lowerPrompt.includes('count')) {
+        if (lowerPrompt.includes('low stock') || lowerPrompt.includes('critical')) {
+          const lowStockProducts = allProducts.filter(p => (p.InStock || 0) < 10 && (p.InStock || 0) > 0);
+          result.lowStockCount = lowStockProducts.length;
+          responseText = `⚠️ **Low Stock Alert**: ${result.lowStockCount} products have critical stock levels (below 10 units)\n\n`;
+          if (lowStockProducts.length > 0) {
+            responseText += "**Products needing attention:**\n";
+            lowStockProducts.slice(0, 5).forEach(p => {
+              responseText += `• ${p.ProductName}: ${p.InStock} units remaining\n`;
+            });
+            if (lowStockProducts.length > 5) {
+              responseText += `... and ${lowStockProducts.length - 5} more products`;
+            }
+          }
+        } else if (lowerPrompt.includes('out of stock') || lowerPrompt.includes('unavailable')) {
+          const outOfStockProducts = allProducts.filter(p => (p.InStock || 0) === 0);
+          result.outOfStockCount = outOfStockProducts.length;
+          responseText = `❌ **Out of Stock**: ${result.outOfStockCount} products are currently unavailable\n\n`;
+          if (outOfStockProducts.length > 0) {
+            responseText += "**Out of stock products:**\n";
+            outOfStockProducts.slice(0, 5).forEach(p => {
+              responseText += `• ${p.ProductName}\n`;
+            });
+            if (outOfStockProducts.length > 5) {
+              responseText += `... and ${outOfStockProducts.length - 5} more products`;
+            }
+          }
+        } else {
+          result.totalProducts = allProducts.length;
+          responseText = `📦 **Total Products**: ${result.totalProducts} products in our catalog`;
+        }
+      }
+
+      // Most expensive/cheapest queries
+      else if (lowerPrompt.includes('most expensive') || lowerPrompt.includes('highest price')) {
+        const mostExpensive = allProducts.reduce((max, p) => (p.Price || 0) > (max.Price || 0) ? p : max, allProducts[0]);
+        result.mostExpensive = mostExpensive;
+        responseText = `💎 **Most Expensive Product**: ${mostExpensive.ProductName}\n\n**Price**: $${mostExpensive.Price} USD\n**Stock**: ${mostExpensive.InStock} units\n**Category**: ${mostExpensive.Category}`;
+      }
+
+      else if (lowerPrompt.includes('cheapest') || lowerPrompt.includes('lowest price')) {
+        const cheapest = allProducts.reduce((min, p) => (p.Price || Infinity) < (min.Price || Infinity) ? p : min, allProducts[0]);
+        result.cheapest = cheapest;
+        responseText = `💰 **Cheapest Product**: ${cheapest.ProductName}\n\n**Price**: $${cheapest.Price} USD\n**Stock**: ${cheapest.InStock} units\n**Category**: ${cheapest.Category}`;
+      }
+
+      // Category breakdown
+      else if (lowerPrompt.includes('category') || lowerPrompt.includes('breakdown')) {
+        const categoryStats = {};
+        allProducts.forEach(p => {
+          const cat = p.Category || 'Uncategorized';
+          if (!categoryStats[cat]) {
+            categoryStats[cat] = { count: 0, totalValue: 0, avgPrice: 0 };
+          }
+          categoryStats[cat].count++;
+          categoryStats[cat].totalValue += (p.Price || 0) * (p.InStock || 0);
+        });
+
+        // Calculate average prices
+        Object.keys(categoryStats).forEach(cat => {
+          const products = allProducts.filter(p => (p.Category || 'Uncategorized') === cat);
+          categoryStats[cat].avgPrice = products.reduce((sum, p) => sum + (p.Price || 0), 0) / products.length;
+        });
+
+        result.categoryBreakdown = categoryStats;
+        responseText = `📊 **Product Category Breakdown**:\n\n`;
+        Object.entries(categoryStats).forEach(([category, stats]) => {
+          responseText += `**${category}**:\n`;
+          responseText += `• Products: ${stats.count}\n`;
+          responseText += `• Avg Price: $${stats.avgPrice.toFixed(2)}\n`;
+          responseText += `• Inventory Value: $${stats.totalValue.toFixed(2)}\n\n`;
+        });
+      }
+
+      // Default fallback
+      else {
+        const stats = {
+          totalProducts: allProducts.length,
+          avgPrice: (allProducts.reduce((sum, p) => sum + (p.Price || 0), 0) / allProducts.length).toFixed(2),
+          lowStock: allProducts.filter(p => (p.InStock || 0) < 10 && (p.InStock || 0) > 0).length,
+          outOfStock: allProducts.filter(p => (p.InStock || 0) === 0).length
+        };
+
+        result.generalStats = stats;
+        responseText = `📊 **Business Intelligence Summary**:\n\n`;
+        responseText += `• **Total Products**: ${stats.totalProducts}\n`;
+        responseText += `• **Average Price**: $${stats.avgPrice} USD\n`;
+        responseText += `• **Low Stock Items**: ${stats.lowStock}\n`;
+        responseText += `• **Out of Stock**: ${stats.outOfStock}\n\n`;
+        responseText += `💡 Try asking: "What's our most expensive product?" or "How many products are low stock?"`;
+      }
+
+      const duration = Date.now() - startTime;
+      console.log(`✅ Business intelligence query completed in ${duration}ms`);
+
+      return {
+        reply: responseText,
+        success: true,
+        timestamp: new Date().toISOString(),
+        processingTime: duration,
+        type: "business_intelligence",
+        data: result
+      };
+
+    } catch (error) {
+      console.error("❌ Error in business intelligence query:", error);
+      return {
+        reply: `I encountered an error while analyzing the business data: ${error.message}. Please try a simpler query.`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
+   * Handle analytics queries
+   */
+  this.handleAnalyticsQuery = async function(prompt, startTime) {
+    try {
+      console.log(`📈 Processing analytics query: "${prompt}"`);
+
+      const db = await cds.connect.to('db');
+      const { Products } = db.entities;
+
+      // Get all products for analysis
+      const allProducts = await db.run(SELECT.from(Products));
+
+      const lowerPrompt = prompt.toLowerCase();
+      let result = {};
+      let responseText = "";
+
+      // Price trend analysis
+      if (lowerPrompt.includes('trend') || lowerPrompt.includes('pattern')) {
+        const priceRanges = {
+          'Under $10': allProducts.filter(p => (p.Price || 0) < 10).length,
+          '$10-$20': allProducts.filter(p => (p.Price || 0) >= 10 && (p.Price || 0) < 20).length,
+          '$20-$50': allProducts.filter(p => (p.Price || 0) >= 20 && (p.Price || 0) < 50).length,
+          'Over $50': allProducts.filter(p => (p.Price || 0) >= 50).length
+        };
+
+        result.priceDistribution = priceRanges;
+        responseText = `📈 **Price Distribution Analysis**:\n\n`;
+        Object.entries(priceRanges).forEach(([range, count]) => {
+          const percentage = ((count / allProducts.length) * 100).toFixed(1);
+          responseText += `• **${range}**: ${count} products (${percentage}%)\n`;
+        });
+      }
+
+      // Stock efficiency analysis
+      else if (lowerPrompt.includes('efficiency') || lowerPrompt.includes('optimization')) {
+        const stockEfficiency = {
+          wellStocked: allProducts.filter(p => (p.InStock || 0) >= 20).length,
+          adequateStock: allProducts.filter(p => (p.InStock || 0) >= 10 && (p.InStock || 0) < 20).length,
+          lowStock: allProducts.filter(p => (p.InStock || 0) > 0 && (p.InStock || 0) < 10).length,
+          outOfStock: allProducts.filter(p => (p.InStock || 0) === 0).length
+        };
+
+        const total = allProducts.length;
+        result.stockEfficiency = stockEfficiency;
+        responseText = `⚡ **Stock Efficiency Analysis**:\n\n`;
+        responseText += `• **Well Stocked** (20+ units): ${stockEfficiency.wellStocked} (${((stockEfficiency.wellStocked/total)*100).toFixed(1)}%)\n`;
+        responseText += `• **Adequate Stock** (10-19 units): ${stockEfficiency.adequateStock} (${((stockEfficiency.adequateStock/total)*100).toFixed(1)}%)\n`;
+        responseText += `• **Low Stock** (1-9 units): ${stockEfficiency.lowStock} (${((stockEfficiency.lowStock/total)*100).toFixed(1)}%)\n`;
+        responseText += `• **Out of Stock**: ${stockEfficiency.outOfStock} (${((stockEfficiency.outOfStock/total)*100).toFixed(1)}%)\n\n`;
+
+        const efficiencyScore = ((stockEfficiency.wellStocked + stockEfficiency.adequateStock) / total * 100).toFixed(1);
+        responseText += `📊 **Overall Stock Efficiency**: ${efficiencyScore}%`;
+      }
+
+      // Revenue potential analysis
+      else if (lowerPrompt.includes('revenue') || lowerPrompt.includes('potential')) {
+        const revenueAnalysis = allProducts.map(p => ({
+          name: p.ProductName,
+          price: p.Price || 0,
+          stock: p.InStock || 0,
+          potential: (p.Price || 0) * (p.InStock || 0)
+        })).sort((a, b) => b.potential - a.potential);
+
+        const totalPotential = revenueAnalysis.reduce((sum, p) => sum + p.potential, 0);
+        const top5 = revenueAnalysis.slice(0, 5);
+
+        result.revenueAnalysis = { totalPotential, top5 };
+        responseText = `💰 **Revenue Potential Analysis**:\n\n`;
+        responseText += `**Total Potential Revenue**: $${totalPotential.toFixed(2)} USD\n\n`;
+        responseText += `**Top 5 Revenue Generators**:\n`;
+        top5.forEach((product, index) => {
+          responseText += `${index + 1}. **${product.name}**: $${product.potential.toFixed(2)} (${product.stock} × $${product.price})\n`;
+        });
+      }
+
+      // Performance ranking
+      else if (lowerPrompt.includes('ranking') || lowerPrompt.includes('top') || lowerPrompt.includes('best')) {
+        const rankings = {
+          byPrice: allProducts.sort((a, b) => (b.Price || 0) - (a.Price || 0)).slice(0, 3),
+          byStock: allProducts.sort((a, b) => (b.InStock || 0) - (a.InStock || 0)).slice(0, 3),
+          byValue: allProducts.map(p => ({
+            ...p,
+            totalValue: (p.Price || 0) * (p.InStock || 0)
+          })).sort((a, b) => b.totalValue - a.totalValue).slice(0, 3)
+        };
+
+        result.rankings = rankings;
+        responseText = `🏆 **Product Performance Rankings**:\n\n`;
+
+        responseText += `**💎 Highest Priced**:\n`;
+        rankings.byPrice.forEach((p, i) => {
+          responseText += `${i + 1}. ${p.ProductName}: $${p.Price}\n`;
+        });
+
+        responseText += `\n**📦 Highest Stock**:\n`;
+        rankings.byStock.forEach((p, i) => {
+          responseText += `${i + 1}. ${p.ProductName}: ${p.InStock} units\n`;
+        });
+
+        responseText += `\n**💰 Highest Inventory Value**:\n`;
+        rankings.byValue.forEach((p, i) => {
+          responseText += `${i + 1}. ${p.ProductName}: $${p.totalValue.toFixed(2)}\n`;
+        });
+      }
+
+      // Default analytics summary
+      else {
+        const analytics = {
+          priceStats: {
+            min: Math.min(...allProducts.map(p => p.Price || 0)),
+            max: Math.max(...allProducts.map(p => p.Price || 0)),
+            avg: (allProducts.reduce((sum, p) => sum + (p.Price || 0), 0) / allProducts.length).toFixed(2)
+          },
+          stockStats: {
+            min: Math.min(...allProducts.map(p => p.InStock || 0)),
+            max: Math.max(...allProducts.map(p => p.InStock || 0)),
+            avg: (allProducts.reduce((sum, p) => sum + (p.InStock || 0), 0) / allProducts.length).toFixed(1)
+          }
+        };
+
+        result.analyticsOverview = analytics;
+        responseText = `📈 **Analytics Overview**:\n\n`;
+        responseText += `**Price Analytics**:\n`;
+        responseText += `• Range: $${analytics.priceStats.min} - $${analytics.priceStats.max}\n`;
+        responseText += `• Average: $${analytics.priceStats.avg}\n\n`;
+        responseText += `**Stock Analytics**:\n`;
+        responseText += `• Range: ${analytics.stockStats.min} - ${analytics.stockStats.max} units\n`;
+        responseText += `• Average: ${analytics.stockStats.avg} units\n\n`;
+        responseText += `💡 Try: "Show me price trends" or "Analyze stock efficiency"`;
+      }
+
+      const duration = Date.now() - startTime;
+      console.log(`✅ Analytics query completed in ${duration}ms`);
+
+      return {
+        reply: responseText,
+        success: true,
+        timestamp: new Date().toISOString(),
+        processingTime: duration,
+        type: "analytics",
+        data: result
+      };
+
+    } catch (error) {
+      console.error("❌ Error in analytics query:", error);
+      return {
+        reply: `I encountered an error while performing the analytics: ${error.message}. Please try a different analysis.`,
+        success: false,
+        timestamp: new Date().toISOString(),
+        processingTime: Date.now() - startTime
+      };
+    }
+  };
+
+  /**
    * Handle general product queries
    */
   this.handleProductQuery = async function(prompt, startTime) {
@@ -1565,6 +2210,21 @@ Format your response professionally with clear recommendations.`;
       }
 
       if (productName) {
+
+        // Check for duplicate product name (case-insensitive)
+        const existingProduct = await db.run(
+          SELECT.one.from(Products).where(`LOWER(ProductName) = LOWER('${productName}')`)
+        );
+
+        if (existingProduct) {
+          return {
+            reply: `❌ **Product Already Exists**\n\n🚫 A product named "${productName}" already exists:\n• **ID**: ${existingProduct.ID}\n• **Name**: ${existingProduct.ProductName}\n• **Price**: $${existingProduct.UnitPrice}\n\n💡 Please use a different name or update the existing product.`,
+            success: false,
+            timestamp: new Date().toISOString(),
+            processingTime: Date.now() - startTime,
+            type: "create_duplicate_error"
+          };
+        }
 
         // Get next ID
         const maxProduct = await db.run(SELECT.one.from(Products).columns('max(ID) as maxId'));

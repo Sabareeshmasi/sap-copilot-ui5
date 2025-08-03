@@ -56,6 +56,38 @@
   display: flex;
   flex-direction: column;
   font-family: "72", "Helvetica Neue", Arial, sans-serif;
+  transform: translateY(0);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 1;
+}
+
+/* Minimized state - with higher specificity and !important */
+#copilotShell.chat-shell.minimized {
+  transform: translateY(calc(100% - 60px)) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1) !important;
+  max-height: 60px !important;
+  overflow: hidden !important;
+}
+
+/* Minimized state - hide body content */
+#copilotShell.chat-shell.minimized .chat-box,
+#copilotShell.chat-shell.minimized .chat-input,
+#copilotShell.chat-shell.minimized .loading-indicator {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 0.2s ease !important;
+  display: none !important;
+}
+
+/* Show only header when minimized */
+#copilotShell.chat-shell.minimized .chat-header {
+  border-radius: 12px !important;
+  cursor: pointer !important;
+}
+
+/* Hover effect on minimized header */
+#copilotShell.chat-shell.minimized .chat-header:hover {
+  background: linear-gradient(135deg, #005bb5, #004494) !important;
 }
 
 /* Chat Header */
