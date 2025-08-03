@@ -29,7 +29,11 @@ sap.ui.define([
         const oNotificationModel = new JSONModel({
           notifications: [],
           unreadCount: 0,
-          isVisible: false
+          isVisible: false,
+          currentFilter: 'all', // all, pending, read, unread
+          selectedPriority: 'all', // all, high, medium, low
+          showDetails: false,
+          selectedNotification: null
         });
         this.getView().setModel(oNotificationModel, "notifications");
         this._bNotificationsVisible = false;
@@ -45,6 +49,11 @@ sap.ui.define([
 
         // Add some test notifications for demonstration
         this._addTestNotifications();
+
+        // Add enhanced test notification after a delay
+        setTimeout(() => {
+          this._testEnhancedNotifications();
+        }, 2000);
       },
   
       onSearch: function (oEvent) {
@@ -492,8 +501,14 @@ sap.ui.define([
           title: `🚨 ${alert.ruleName}`,
           message: alert.message,
           timestamp: alert.timestamp,
-          priority: alert.priority,
-          read: false
+          priority: alert.priority || 'high',
+          read: false,
+          acknowledged: false,
+          dismissed: false,
+          status: 'pending', // pending, acknowledged, dismissed
+          details: alert.details || alert.message,
+          actionRequired: true,
+          category: 'system_alert'
         };
 
         this._addNotification(notification);
@@ -506,15 +521,60 @@ sap.ui.define([
         const oNotificationModel = this.getView().getModel("notifications");
         const oContainer = this.byId("notificationPanelContainer");
 
-        // Create notification panel HTML
-        const notificationHTML = this._createNotificationPanelHTML();
-        oContainer.setContent(notificationHTML);
+        try {
+          // Create notification panel HTML
+          const notificationHTML = this._createNotificationPanelHTML();
+          oContainer.setContent(notificationHTML);
 
+          oNotificationModel.setProperty("/isVisible", true);
+          this._bNotificationsVisible = true;
+
+          console.log("🔔 Enhanced notification panel opened");
+
+          // Don't automatically mark as read - let user control this
+          // this._markAllNotificationsAsRead();
+        } catch (error) {
+          console.error("❌ Error creating enhanced notification panel:", error);
+          // Fallback to simple notification panel
+          this._showSimpleNotificationPanel();
+        }
+      },
+
+      /**
+       * Show simple notification panel (fallback)
+       */
+      _showSimpleNotificationPanel: function() {
+        const oNotificationModel = this.getView().getModel("notifications");
+        const oContainer = this.byId("notificationPanelContainer");
+        const aNotifications = oNotificationModel.getProperty("/notifications") || [];
+
+        const simpleHTML = `
+          <div class="notification-panel">
+            <div class="notification-header">
+              <h3>🔔 Notifications (${aNotifications.length})</h3>
+              <button class="close-btn" onclick="window.sapCopilotController._hideNotificationPanel()">×</button>
+            </div>
+            <div class="notification-list">
+              ${aNotifications.length === 0 ?
+                '<div class="no-notifications"><p>📭 No notifications</p></div>' :
+                aNotifications.map(n => `
+                  <div class="notification-item ${n.priority || 'medium'} ${n.read ? 'read' : 'unread'}">
+                    <div class="notification-content">
+                      <div class="notification-title">${n.title}</div>
+                      <div class="notification-message">${n.message}</div>
+                      <div class="notification-time">${this._getTimeAgo(n.timestamp)}</div>
+                    </div>
+                  </div>
+                `).join('')
+              }
+            </div>
+          </div>
+        `;
+
+        oContainer.setContent(simpleHTML);
         oNotificationModel.setProperty("/isVisible", true);
         this._bNotificationsVisible = true;
-
-        // Mark all notifications as read when panel is opened
-        this._markAllNotificationsAsRead();
+        console.log("🔔 Simple notification panel opened (fallback)");
       },
 
       /**
@@ -535,34 +595,128 @@ sap.ui.define([
       _createNotificationPanelHTML: function() {
         const oNotificationModel = this.getView().getModel("notifications");
         const aNotifications = oNotificationModel.getProperty("/notifications") || [];
+        const currentFilter = oNotificationModel.getProperty("/currentFilter") || 'all';
+        const selectedPriority = oNotificationModel.getProperty("/selectedPriority") || 'all';
+
+        // Filter notifications based on current filter and priority
+        const filteredNotifications = this._filterNotifications(aNotifications, currentFilter, selectedPriority);
+
+        // Count different types
+        const counts = {
+          all: aNotifications.length,
+          pending: aNotifications.filter(n => n.status === 'pending').length,
+          unread: aNotifications.filter(n => !n.read).length,
+          acknowledged: aNotifications.filter(n => n.acknowledged).length
+        };
 
         let html = `
-          <div class="notification-panel">
+          <div class="notification-panel enhanced">
             <div class="notification-header">
-              <h3>🔔 Notifications</h3>
+              <h3>🔔 Notifications (${filteredNotifications.length})</h3>
               <button class="close-btn" onclick="window.sapCopilotController._hideNotificationPanel()">×</button>
             </div>
+
+            <!-- Filter Controls -->
+            <div class="notification-filters">
+              <div class="filter-tabs">
+                <button class="filter-tab ${currentFilter === 'all' ? 'active' : ''}"
+                        onclick="window.sapCopilotController._setNotificationFilter('all')">
+                  All (${counts.all})
+                </button>
+                <button class="filter-tab ${currentFilter === 'pending' ? 'active' : ''}"
+                        onclick="window.sapCopilotController._setNotificationFilter('pending')">
+                  Pending (${counts.pending})
+                </button>
+                <button class="filter-tab ${currentFilter === 'unread' ? 'active' : ''}"
+                        onclick="window.sapCopilotController._setNotificationFilter('unread')">
+                  Unread (${counts.unread})
+                </button>
+              </div>
+
+              <div class="priority-filter">
+                <select onchange="window.sapCopilotController._setPriorityFilter(this.value)" class="priority-select">
+                  <option value="all" ${selectedPriority === 'all' ? 'selected' : ''}>All Priorities</option>
+                  <option value="high" ${selectedPriority === 'high' ? 'selected' : ''}>🔴 High</option>
+                  <option value="medium" ${selectedPriority === 'medium' ? 'selected' : ''}>🟡 Medium</option>
+                  <option value="low" ${selectedPriority === 'low' ? 'selected' : ''}>🟢 Low</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Bulk Actions -->
+            <div class="bulk-actions">
+              <button onclick="window.sapCopilotController._markAllAsRead()" class="bulk-btn">
+                ✓ Mark All Read
+              </button>
+              <button onclick="window.sapCopilotController._acknowledgeAll()" class="bulk-btn">
+                👍 Acknowledge All
+              </button>
+              <button onclick="window.sapCopilotController._clearDismissed()" class="bulk-btn">
+                🗑️ Clear Dismissed
+              </button>
+            </div>
+
             <div class="notification-list">
         `;
 
-        if (aNotifications.length === 0) {
+        if (filteredNotifications.length === 0) {
           html += `
             <div class="no-notifications">
-              <p>📭 No notifications yet</p>
-              <p>Alerts and updates will appear here</p>
+              <p>📭 No notifications match your filter</p>
+              <p>Try changing the filter or priority settings</p>
             </div>
           `;
         } else {
-          aNotifications.forEach(notification => {
+          filteredNotifications.forEach(notification => {
             const timeAgo = this._getTimeAgo(notification.timestamp);
             const priorityClass = notification.priority || 'medium';
+            const statusClass = notification.status || 'pending';
+            const readClass = notification.read ? 'read' : 'unread';
+
+            // Priority icon
+            const priorityIcon = {
+              'high': '🔴',
+              'medium': '🟡',
+              'low': '🟢'
+            }[notification.priority] || '🟡';
+
+            // Status icon
+            const statusIcon = {
+              'pending': '⏳',
+              'acknowledged': '✅',
+              'dismissed': '❌'
+            }[notification.status] || '⏳';
 
             html += `
-              <div class="notification-item ${priorityClass}">
+              <div class="notification-item ${priorityClass} ${statusClass} ${readClass}" data-id="${notification.id}">
+                <div class="notification-indicators">
+                  <span class="priority-indicator">${priorityIcon}</span>
+                  <span class="status-indicator">${statusIcon}</span>
+                  ${!notification.read ? '<span class="unread-dot">●</span>' : ''}
+                </div>
+
                 <div class="notification-content">
                   <div class="notification-title">${notification.title}</div>
                   <div class="notification-message">${notification.message}</div>
-                  <div class="notification-time">${timeAgo}</div>
+                  <div class="notification-meta">
+                    <span class="notification-time">${timeAgo}</span>
+                    <span class="notification-category">${notification.category || 'general'}</span>
+                  </div>
+                </div>
+
+                <div class="notification-actions">
+                  ${!notification.read ?
+                    `<button onclick="window.sapCopilotController._markAsRead('${notification.id}')" class="action-btn read-btn" title="Mark as Read">👁️</button>` :
+                    `<button onclick="window.sapCopilotController._markAsUnread('${notification.id}')" class="action-btn unread-btn" title="Mark as Unread">👁️‍🗨️</button>`
+                  }
+
+                  ${notification.status === 'pending' && notification.actionRequired ?
+                    `<button onclick="window.sapCopilotController._acknowledgeNotification('${notification.id}')" class="action-btn ack-btn" title="Acknowledge">✅</button>` : ''
+                  }
+
+                  <button onclick="window.sapCopilotController._showNotificationDetails('${notification.id}')" class="action-btn details-btn" title="View Details">📋</button>
+
+                  <button onclick="window.sapCopilotController._dismissNotification('${notification.id}')" class="action-btn dismiss-btn" title="Dismiss">🗑️</button>
                 </div>
               </div>
             `;
@@ -578,18 +732,394 @@ sap.ui.define([
       },
 
       /**
-       * Mark all notifications as read
+       * Filter notifications based on criteria
        */
-      _markAllNotificationsAsRead: function() {
+      _filterNotifications: function(notifications, filter, priority) {
+        let filtered = notifications;
+
+        // Apply status filter
+        switch(filter) {
+          case 'pending':
+            filtered = filtered.filter(n => n.status === 'pending');
+            break;
+          case 'unread':
+            filtered = filtered.filter(n => !n.read);
+            break;
+          case 'acknowledged':
+            filtered = filtered.filter(n => n.acknowledged);
+            break;
+          case 'dismissed':
+            filtered = filtered.filter(n => n.dismissed);
+            break;
+          // 'all' shows everything
+        }
+
+        // Apply priority filter
+        if (priority !== 'all') {
+          filtered = filtered.filter(n => n.priority === priority);
+        }
+
+        return filtered;
+      },
+
+      /**
+       * Set notification filter
+       */
+      _setNotificationFilter: function(filter) {
+        try {
+          console.log(`🔍 Setting notification filter to: ${filter}`);
+          const oNotificationModel = this.getView().getModel("notifications");
+          oNotificationModel.setProperty("/currentFilter", filter);
+
+          // Refresh the panel
+          if (this._bNotificationsVisible) {
+            this._showNotificationPanel();
+          }
+        } catch (error) {
+          console.error("❌ Error setting notification filter:", error);
+        }
+      },
+
+      /**
+       * Set priority filter
+       */
+      _setPriorityFilter: function(priority) {
+        try {
+          console.log(`🎯 Setting priority filter to: ${priority}`);
+          const oNotificationModel = this.getView().getModel("notifications");
+          oNotificationModel.setProperty("/selectedPriority", priority);
+
+          // Refresh the panel
+          if (this._bNotificationsVisible) {
+            this._showNotificationPanel();
+          }
+        } catch (error) {
+          console.error("❌ Error setting priority filter:", error);
+        }
+      },
+
+      /**
+       * Mark specific notification as read
+       */
+      _markAsRead: function(notificationId) {
+        try {
+          console.log(`👁️ Marking notification as read: ${notificationId}`);
+          const oNotificationModel = this.getView().getModel("notifications");
+          const aNotifications = oNotificationModel.getProperty("/notifications") || [];
+
+          const notification = aNotifications.find(n => n.id === notificationId);
+          if (notification) {
+            notification.read = true;
+            oNotificationModel.setProperty("/notifications", aNotifications);
+            this._updateUnreadCount();
+            this._showNotificationPanel(); // Refresh
+            console.log(`✅ Notification marked as read: ${notification.title}`);
+          } else {
+            console.warn(`⚠️ Notification not found: ${notificationId}`);
+          }
+        } catch (error) {
+          console.error("❌ Error marking notification as read:", error);
+        }
+      },
+
+      /**
+       * Mark specific notification as unread
+       */
+      _markAsUnread: function(notificationId) {
+        try {
+          console.log(`👁️‍🗨️ Marking notification as unread: ${notificationId}`);
+          const oNotificationModel = this.getView().getModel("notifications");
+          const aNotifications = oNotificationModel.getProperty("/notifications") || [];
+
+          const notification = aNotifications.find(n => n.id === notificationId);
+          if (notification) {
+            notification.read = false;
+            oNotificationModel.setProperty("/notifications", aNotifications);
+            this._updateUnreadCount();
+            this._showNotificationPanel(); // Refresh
+            console.log(`✅ Notification marked as unread: ${notification.title}`);
+          } else {
+            console.warn(`⚠️ Notification not found: ${notificationId}`);
+          }
+        } catch (error) {
+          console.error("❌ Error marking notification as unread:", error);
+        }
+      },
+
+      /**
+       * Acknowledge notification
+       */
+      _acknowledgeNotification: function(notificationId) {
+        try {
+          console.log(`✅ Acknowledging notification: ${notificationId}`);
+          const oNotificationModel = this.getView().getModel("notifications");
+          const aNotifications = oNotificationModel.getProperty("/notifications") || [];
+
+          const notification = aNotifications.find(n => n.id === notificationId);
+          if (notification) {
+            notification.acknowledged = true;
+            notification.status = 'acknowledged';
+            notification.read = true;
+            oNotificationModel.setProperty("/notifications", aNotifications);
+            this._updateUnreadCount();
+            this._showNotificationPanel(); // Refresh
+
+            MessageToast.show(`✅ Notification acknowledged: ${notification.title}`);
+            console.log(`✅ Notification acknowledged: ${notification.title}`);
+          } else {
+            console.warn(`⚠️ Notification not found: ${notificationId}`);
+          }
+        } catch (error) {
+          console.error("❌ Error acknowledging notification:", error);
+        }
+      },
+
+      /**
+       * Dismiss notification
+       */
+      _dismissNotification: function(notificationId) {
+        try {
+          console.log(`🗑️ Dismissing notification: ${notificationId}`);
+          const oNotificationModel = this.getView().getModel("notifications");
+          const aNotifications = oNotificationModel.getProperty("/notifications") || [];
+
+          const notification = aNotifications.find(n => n.id === notificationId);
+          if (notification) {
+            notification.dismissed = true;
+            notification.status = 'dismissed';
+            notification.read = true;
+            oNotificationModel.setProperty("/notifications", aNotifications);
+            this._updateUnreadCount();
+            this._showNotificationPanel(); // Refresh
+
+            MessageToast.show(`🗑️ Notification dismissed: ${notification.title}`);
+            console.log(`🗑️ Notification dismissed: ${notification.title}`);
+          } else {
+            console.warn(`⚠️ Notification not found: ${notificationId}`);
+          }
+        } catch (error) {
+          console.error("❌ Error dismissing notification:", error);
+        }
+      },
+
+      /**
+       * Show notification details
+       */
+      _showNotificationDetails: function(notificationId) {
         const oNotificationModel = this.getView().getModel("notifications");
         const aNotifications = oNotificationModel.getProperty("/notifications") || [];
 
+        const notification = aNotifications.find(n => n.id === notificationId);
+        if (notification) {
+          oNotificationModel.setProperty("/selectedNotification", notification);
+          oNotificationModel.setProperty("/showDetails", true);
+
+          // Create details modal
+          this._createNotificationDetailsModal(notification);
+        }
+      },
+
+      /**
+       * Mark all notifications as read
+       */
+      _markAllAsRead: function() {
+        try {
+          console.log(`👁️ Marking all notifications as read`);
+          const oNotificationModel = this.getView().getModel("notifications");
+          const aNotifications = oNotificationModel.getProperty("/notifications") || [];
+
+          let markedCount = 0;
+          aNotifications.forEach(notification => {
+            if (!notification.read) {
+              notification.read = true;
+              markedCount++;
+            }
+          });
+
+          oNotificationModel.setProperty("/notifications", aNotifications);
+          this._updateUnreadCount();
+          this._showNotificationPanel(); // Refresh
+
+          MessageToast.show(`✅ ${markedCount} notifications marked as read`);
+          console.log(`✅ ${markedCount} notifications marked as read`);
+        } catch (error) {
+          console.error("❌ Error marking all notifications as read:", error);
+        }
+      },
+
+      /**
+       * Acknowledge all pending notifications
+       */
+      _acknowledgeAll: function() {
+        const oNotificationModel = this.getView().getModel("notifications");
+        const aNotifications = oNotificationModel.getProperty("/notifications") || [];
+
+        let acknowledgedCount = 0;
         aNotifications.forEach(notification => {
-          notification.read = true;
+          if (notification.status === 'pending' && notification.actionRequired) {
+            notification.acknowledged = true;
+            notification.status = 'acknowledged';
+            notification.read = true;
+            acknowledgedCount++;
+          }
         });
 
         oNotificationModel.setProperty("/notifications", aNotifications);
-        oNotificationModel.setProperty("/unreadCount", 0);
+        this._updateUnreadCount();
+        this._showNotificationPanel(); // Refresh
+
+        MessageToast.show(`✅ ${acknowledgedCount} notifications acknowledged`);
+      },
+
+      /**
+       * Clear dismissed notifications
+       */
+      _clearDismissed: function() {
+        const oNotificationModel = this.getView().getModel("notifications");
+        const aNotifications = oNotificationModel.getProperty("/notifications") || [];
+
+        const remainingNotifications = aNotifications.filter(n => !n.dismissed);
+        const clearedCount = aNotifications.length - remainingNotifications.length;
+
+        oNotificationModel.setProperty("/notifications", remainingNotifications);
+        this._updateUnreadCount();
+        this._showNotificationPanel(); // Refresh
+
+        MessageToast.show(`🗑️ ${clearedCount} dismissed notifications cleared`);
+      },
+
+      /**
+       * Update unread count
+       */
+      _updateUnreadCount: function() {
+        const oNotificationModel = this.getView().getModel("notifications");
+        const aNotifications = oNotificationModel.getProperty("/notifications") || [];
+        const unreadCount = aNotifications.filter(n => !n.read).length;
+        oNotificationModel.setProperty("/unreadCount", unreadCount);
+      },
+
+      /**
+       * Mark all notifications as read (legacy function)
+       */
+      _markAllNotificationsAsRead: function() {
+        this._markAllAsRead();
+      },
+
+      /**
+       * Create notification details modal
+       */
+      _createNotificationDetailsModal: function(notification) {
+        const timeAgo = this._getTimeAgo(notification.timestamp);
+        const fullDate = new Date(notification.timestamp).toLocaleString();
+
+        const priorityIcon = {
+          'high': '🔴',
+          'medium': '🟡',
+          'low': '🟢'
+        }[notification.priority] || '🟡';
+
+        const statusIcon = {
+          'pending': '⏳',
+          'acknowledged': '✅',
+          'dismissed': '❌'
+        }[notification.status] || '⏳';
+
+        const modalHtml = `
+          <div class="notification-modal-overlay" onclick="window.sapCopilotController._closeNotificationDetails()">
+            <div class="notification-modal" onclick="event.stopPropagation()">
+              <div class="modal-header">
+                <h3>📋 Notification Details</h3>
+                <button class="close-btn" onclick="window.sapCopilotController._closeNotificationDetails()">×</button>
+              </div>
+
+              <div class="modal-content">
+                <div class="notification-detail-item">
+                  <label>Title:</label>
+                  <div class="detail-value">${notification.title}</div>
+                </div>
+
+                <div class="notification-detail-item">
+                  <label>Message:</label>
+                  <div class="detail-value">${notification.message}</div>
+                </div>
+
+                <div class="notification-detail-item">
+                  <label>Details:</label>
+                  <div class="detail-value">${notification.details || notification.message}</div>
+                </div>
+
+                <div class="notification-detail-row">
+                  <div class="notification-detail-item">
+                    <label>Priority:</label>
+                    <div class="detail-value">${priorityIcon} ${notification.priority || 'medium'}</div>
+                  </div>
+
+                  <div class="notification-detail-item">
+                    <label>Status:</label>
+                    <div class="detail-value">${statusIcon} ${notification.status || 'pending'}</div>
+                  </div>
+                </div>
+
+                <div class="notification-detail-row">
+                  <div class="notification-detail-item">
+                    <label>Category:</label>
+                    <div class="detail-value">${notification.category || 'general'}</div>
+                  </div>
+
+                  <div class="notification-detail-item">
+                    <label>Type:</label>
+                    <div class="detail-value">${notification.type || 'info'}</div>
+                  </div>
+                </div>
+
+                <div class="notification-detail-item">
+                  <label>Timestamp:</label>
+                  <div class="detail-value">${fullDate} (${timeAgo})</div>
+                </div>
+
+                <div class="notification-detail-item">
+                  <label>ID:</label>
+                  <div class="detail-value">${notification.id}</div>
+                </div>
+              </div>
+
+              <div class="modal-actions">
+                ${!notification.read ?
+                  `<button onclick="window.sapCopilotController._markAsRead('${notification.id}'); window.sapCopilotController._closeNotificationDetails();" class="modal-btn primary">👁️ Mark as Read</button>` :
+                  `<button onclick="window.sapCopilotController._markAsUnread('${notification.id}'); window.sapCopilotController._closeNotificationDetails();" class="modal-btn">👁️‍🗨️ Mark as Unread</button>`
+                }
+
+                ${notification.status === 'pending' && notification.actionRequired ?
+                  `<button onclick="window.sapCopilotController._acknowledgeNotification('${notification.id}'); window.sapCopilotController._closeNotificationDetails();" class="modal-btn success">✅ Acknowledge</button>` : ''
+                }
+
+                <button onclick="window.sapCopilotController._dismissNotification('${notification.id}'); window.sapCopilotController._closeNotificationDetails();" class="modal-btn danger">🗑️ Dismiss</button>
+
+                <button onclick="window.sapCopilotController._closeNotificationDetails()" class="modal-btn">Cancel</button>
+              </div>
+            </div>
+          </div>
+        `;
+
+        // Add modal to body
+        const modalContainer = document.createElement('div');
+        modalContainer.id = 'notificationDetailsModal';
+        modalContainer.innerHTML = modalHtml;
+        document.body.appendChild(modalContainer);
+      },
+
+      /**
+       * Close notification details modal
+       */
+      _closeNotificationDetails: function() {
+        const modal = document.getElementById('notificationDetailsModal');
+        if (modal) {
+          modal.remove();
+        }
+
+        const oNotificationModel = this.getView().getModel("notifications");
+        oNotificationModel.setProperty("/showDetails", false);
+        oNotificationModel.setProperty("/selectedNotification", null);
       },
 
       /**
@@ -610,19 +1140,51 @@ sap.ui.define([
       },
 
       /**
+       * Test enhanced notification system
+       */
+      _testEnhancedNotifications: function() {
+        console.log("🧪 Testing enhanced notification system...");
+
+        // Add a test notification to verify the system works
+        this._addNotification({
+          id: 'test_enhanced_' + Date.now(),
+          type: 'info',
+          title: '🧪 Enhanced Notification Test',
+          message: 'Testing the enhanced notification system with filters and actions',
+          details: 'This is a test notification to verify that the enhanced notification system is working properly. You should be able to filter, mark as read/unread, acknowledge, and dismiss this notification.',
+          timestamp: new Date().toISOString(),
+          priority: 'medium',
+          read: false,
+          acknowledged: false,
+          dismissed: false,
+          status: 'pending',
+          actionRequired: true,
+          category: 'system_test'
+        });
+
+        console.log("✅ Test notification added");
+      },
+
+      /**
        * Add test notifications for demonstration
        */
       _addTestNotifications: function() {
-        // Add some sample notifications to show the system is working
+        // Add some sample notifications to show the enhanced system
         setTimeout(() => {
           this._addNotification({
             id: 'test_1',
             type: 'alert',
             title: '🚨 Critical Alert: Out of Stock',
             message: '3 products are completely out of stock and need immediate attention',
+            details: 'Products affected: Wireless Headphones, Smart Watch Pro, Gaming Mouse. These items have zero inventory and should be restocked immediately to avoid lost sales.',
             timestamp: new Date().toISOString(),
             priority: 'high',
-            read: false
+            read: false,
+            acknowledged: false,
+            dismissed: false,
+            status: 'pending',
+            actionRequired: true,
+            category: 'inventory_alert'
           });
         }, 2000);
 
@@ -632,9 +1194,15 @@ sap.ui.define([
             type: 'alert',
             title: '⚠️ Alert: Low Stock Warning',
             message: '7 products have stock below 20 units - consider reordering',
+            details: 'Products with low stock: Chang (17 units), Aniseed Syrup (13 units), Chef Anton\'s Cajun Seasoning (53 units), and 4 others. Review reorder points and supplier lead times.',
             timestamp: new Date(Date.now() - 300000).toISOString(), // 5 minutes ago
             priority: 'medium',
-            read: false
+            read: false,
+            acknowledged: false,
+            dismissed: false,
+            status: 'pending',
+            actionRequired: true,
+            category: 'inventory_warning'
           });
         }, 3000);
 
@@ -644,11 +1212,35 @@ sap.ui.define([
             type: 'info',
             title: '📊 System Update',
             message: 'Alert monitoring system is active and checking every 5 minutes',
+            details: 'The automated alert system is running normally. Next check scheduled for ' + new Date(Date.now() + 300000).toLocaleTimeString() + '. All monitoring rules are active.',
             timestamp: new Date(Date.now() - 600000).toISOString(), // 10 minutes ago
             priority: 'low',
-            read: false
+            read: false,
+            acknowledged: false,
+            dismissed: false,
+            status: 'pending',
+            actionRequired: false,
+            category: 'system_info'
           });
         }, 4000);
+
+        setTimeout(() => {
+          this._addNotification({
+            id: 'test_4',
+            type: 'success',
+            title: '✅ Inventory Update Complete',
+            message: 'Successfully updated inventory levels for 15 products',
+            details: 'Batch inventory update completed at ' + new Date().toLocaleTimeString() + '. Updated products include beverages, dairy products, and condiments. All stock levels have been verified.',
+            timestamp: new Date(Date.now() - 900000).toISOString(), // 15 minutes ago
+            priority: 'low',
+            read: true,
+            acknowledged: true,
+            dismissed: false,
+            status: 'acknowledged',
+            actionRequired: false,
+            category: 'system_update'
+          });
+        }, 5000);
       },
 
       _triggerReportDownload: function(reportFile) {
