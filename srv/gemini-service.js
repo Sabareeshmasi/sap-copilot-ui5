@@ -512,7 +512,7 @@ Ready to help! What would you like to explore?
       const { products, metrics } = businessData;
 
       // Create enhanced prompt for AI with business context
-      const enhancedPrompt = `You are SAP Copilot, an intelligent business assistant. Answer the user's question naturally and conversationally using the provided business data.
+      const enhancedPrompt = `You are SAP Copilot, an intelligent business assistant. Answer the user's question in a clear, structured point-by-point format using the provided business data.
 
 BUSINESS DATA CONTEXT:
 - Total Products: ${metrics.totalProducts}
@@ -527,7 +527,24 @@ ${products.slice(0, 5).map(p => `- ${p.ProductName}: $${p.UnitPrice}, Stock: ${p
 
 USER QUESTION: "${prompt}"
 
-Provide a natural, conversational response that directly answers their question. Use emojis and formatting to make it engaging. If they ask about products, provide specific examples. Be helpful and informative.
+FORMATTING REQUIREMENTS:
+- Use clear bullet points (•) or numbered lists (1., 2., 3.)
+- Start with a brief summary if applicable
+- Break down complex information into digestible points
+- Use emojis for visual appeal (📊, 💰, 📦, ⚠️, ✅)
+- Include specific data points and examples
+- End with actionable insights or next steps if relevant
+
+RESPONSE FORMAT EXAMPLE:
+📊 **[Topic Summary]**
+
+• **Point 1**: [Specific information with data]
+• **Point 2**: [Additional details]
+• **Point 3**: [More insights]
+
+💡 **Key Insights:**
+• [Important takeaway 1]
+• [Important takeaway 2]
 
 RESPONSE:`;
 
@@ -612,21 +629,44 @@ RESPONSE:`;
     let responseText = "";
 
     if (lowerPrompt.includes('how many')) {
-      responseText = `📊 I have access to **${metrics.totalProducts} products** in our catalog. `;
+      responseText = `📊 **Product Count Analysis**\n\n`;
+      responseText += `• **Total Products**: ${metrics.totalProducts} items in our catalog\n`;
       if (lowerPrompt.includes('stock')) {
-        responseText += `Currently, **${metrics.lowStockCount} products** have low stock (below 10 units) and **${metrics.outOfStockCount} products** are out of stock.`;
+        responseText += `• **Low Stock Items**: ${metrics.lowStockCount} products (below 10 units)\n`;
+        responseText += `• **Out of Stock**: ${metrics.outOfStockCount} products\n`;
+        responseText += `• **Well Stocked**: ${metrics.totalProducts - metrics.lowStockCount - metrics.outOfStockCount} products\n\n`;
+        responseText += `💡 **Recommendation**: Review low stock items for potential reordering`;
       } else {
-        responseText += `Would you like to see the complete list or filter by specific criteria?`;
+        responseText += `• **Available for Analysis**: Complete product catalog\n`;
+        responseText += `• **Data Points**: Pricing, stock levels, categories\n\n`;
+        responseText += `💡 **Next Steps**: Ask for specific filters or analysis`;
       }
     } else if (lowerPrompt.includes('average') && lowerPrompt.includes('price')) {
-      responseText = `💰 The average product price is **$${metrics.averagePrice?.toFixed(2)}**. Our prices range from $${metrics.lowestPrice} to $${metrics.highestPrice}.`;
+      responseText = `💰 **Price Analysis**\n\n`;
+      responseText += `• **Average Price**: $${metrics.averagePrice?.toFixed(2)}\n`;
+      responseText += `• **Lowest Price**: $${metrics.lowestPrice}\n`;
+      responseText += `• **Highest Price**: $${metrics.highestPrice}\n`;
+      responseText += `• **Price Range**: $${(metrics.highestPrice - metrics.lowestPrice).toFixed(2)} spread\n\n`;
+      responseText += `💡 **Insights**: Price distribution across ${metrics.totalProducts} products`;
     } else if (lowerPrompt.includes('total') && lowerPrompt.includes('value')) {
-      responseText = `💎 The total inventory value is **$${metrics.totalInventoryValue?.toFixed(2)}**, calculated from all ${metrics.totalProducts} products and their current stock levels.`;
+      responseText = `💎 **Inventory Value Analysis**\n\n`;
+      responseText += `• **Total Value**: $${metrics.totalInventoryValue?.toFixed(2)}\n`;
+      responseText += `• **Based On**: ${metrics.totalProducts} products\n`;
+      responseText += `• **Calculation**: Unit price × Stock quantity\n`;
+      responseText += `• **Average Value per Product**: $${(metrics.totalInventoryValue / metrics.totalProducts).toFixed(2)}\n\n`;
+      responseText += `💡 **Business Impact**: Represents current inventory investment`;
     } else {
       // General response
-      responseText = `📊 I have access to **${metrics.totalProducts} products** and can provide detailed analysis. `;
-      responseText += `Our inventory includes items ranging from $${metrics.lowestPrice} to $${metrics.highestPrice}. `;
-      responseText += `What specific aspect interests you? I can show you product lists, analyze pricing, check stock levels, or provide business insights.`;
+      responseText = `📊 **Business Data Overview**\n\n`;
+      responseText += `• **Product Catalog**: ${metrics.totalProducts} items available\n`;
+      responseText += `• **Price Range**: $${metrics.lowestPrice} - $${metrics.highestPrice}\n`;
+      responseText += `• **Inventory Status**: ${metrics.totalProducts - metrics.outOfStockCount} products in stock\n`;
+      responseText += `• **Analysis Capabilities**: Pricing, stock levels, trends\n\n`;
+      responseText += `💡 **Available Insights**:\n`;
+      responseText += `• Product lists and filtering\n`;
+      responseText += `• Price analysis and comparisons\n`;
+      responseText += `• Stock level monitoring\n`;
+      responseText += `• Business intelligence reports`;
     }
 
     return {
@@ -669,6 +709,25 @@ User Query: "${prompt}"
 BUSINESS DATA CONTEXT:
 ${businessContext}
 
+FORMATTING REQUIREMENTS:
+- Structure your response with clear bullet points (•) or numbered lists (1., 2., 3.)
+- Use section headers with emojis for better organization
+- Break down complex information into digestible points
+- Include specific data points and examples from the context
+- Use emojis for visual appeal (📊, 💰, 📦, ⚠️, ✅, 🔍, 📈)
+- End with actionable insights or recommendations
+
+RESPONSE FORMAT EXAMPLE:
+📊 **[Main Topic/Summary]**
+
+• **Key Point 1**: [Specific information with data]
+• **Key Point 2**: [Additional details]
+• **Key Point 3**: [More insights]
+
+💡 **Recommendations/Next Steps:**
+• [Actionable item 1]
+• [Actionable item 2]
+
 INSTRUCTIONS:
 - Analyze the user's question and provide intelligent, actionable responses
 - Use the provided business data to give specific, data-driven answers
@@ -678,7 +737,7 @@ INSTRUCTIONS:
 - For general questions, provide professional business insights
 - For transaction requests, guide users on proper syntax and requirements
 - Always be helpful, accurate, and business-focused
-- Format responses clearly with emojis and structure for readability
+- ALWAYS format responses in clear point-by-point structure as shown above
 
 RESPONSE:`;
 
@@ -1507,15 +1566,33 @@ RESPONSE:`;
       // Average price queries
       if (lowerPrompt.includes('average') && lowerPrompt.includes('price')) {
         const avgPrice = allProducts.reduce((sum, p) => sum + (p.Price || 0), 0) / allProducts.length;
+        const minPrice = Math.min(...allProducts.map(p => p.Price || 0));
+        const maxPrice = Math.max(...allProducts.map(p => p.Price || 0));
         result.averagePrice = avgPrice.toFixed(2);
-        responseText = `📊 **Average Product Price**: $${result.averagePrice} USD\n\nBased on ${allProducts.length} products in our catalog.`;
+
+        responseText = `📊 **Average Product Price Analysis**\n\n`;
+        responseText += `• **Average Price**: $${result.averagePrice} USD\n`;
+        responseText += `• **Lowest Price**: $${minPrice} USD\n`;
+        responseText += `• **Highest Price**: $${maxPrice} USD\n`;
+        responseText += `• **Price Range**: $${(maxPrice - minPrice).toFixed(2)} spread\n`;
+        responseText += `• **Sample Size**: ${allProducts.length} products\n\n`;
+        responseText += `💡 **Insights**: Price distribution across our complete catalog`;
       }
 
       // Total value queries
       else if (lowerPrompt.includes('total') && (lowerPrompt.includes('value') || lowerPrompt.includes('inventory'))) {
         const totalValue = allProducts.reduce((sum, p) => sum + ((p.Price || 0) * (p.InStock || 0)), 0);
+        const avgValuePerProduct = totalValue / allProducts.length;
+        const productsInStock = allProducts.filter(p => (p.InStock || 0) > 0).length;
         result.totalInventoryValue = totalValue.toFixed(2);
-        responseText = `💰 **Total Inventory Value**: $${result.totalInventoryValue} USD\n\nCalculated from ${allProducts.length} products and their current stock levels.`;
+
+        responseText = `💰 **Total Inventory Value Analysis**\n\n`;
+        responseText += `• **Total Value**: $${result.totalInventoryValue} USD\n`;
+        responseText += `• **Products Analyzed**: ${allProducts.length} items\n`;
+        responseText += `• **Products in Stock**: ${productsInStock} items\n`;
+        responseText += `• **Average Value per Product**: $${avgValuePerProduct.toFixed(2)}\n`;
+        responseText += `• **Calculation Method**: Unit price × Stock quantity\n\n`;
+        responseText += `💡 **Business Impact**: Represents current inventory investment`;
       }
 
       // Count queries
@@ -2182,19 +2259,36 @@ Format your response professionally with clear recommendations.`;
       const db = await cds.connect.to('db');
       const { Products } = db.entities;
 
-      // Enhanced parsing for "Create product [name] price [amount]"
-      const productMatch = prompt.match(/create\s+(?:a\s+)?product\s+(?:named\s+)?(.+?)(?:\s+(?:with\s+)?price\s+(\d+(?:\.\d+)?))/i);
+      // Enhanced parsing for advanced product creation with multiple parameters
+      // Pattern: Create product "name" price X stock Y category Z description "text"
+      const advancedMatch = prompt.match(/create\s+(?:a\s+)?product\s+["']?([^"']+?)["']?\s+price\s+(\d+(?:\.\d+)?)(?:\s+stock\s+(\d+))?(?:\s+category\s+([^"'\s]+|"[^"]*"|'[^']*'))?(?:\s+description\s+["']([^"']+)["'])?/i);
 
-      // Alternative patterns if first doesn't match
+      // Basic pattern: Create product [name] price [amount]
+      const basicMatch = prompt.match(/create\s+(?:a\s+)?product\s+(?:named\s+)?(.+?)(?:\s+(?:with\s+)?price\s+(\d+(?:\.\d+)?))/i);
+
+      // Alternative patterns if others don't match
       const altMatch = prompt.match(/create\s+(?:a\s+)?product\s+(.+)/i);
 
       let productName = '';
       let price = 0;
+      let stock = 0;
+      let category = '';
+      let description = 'Created via SAP Copilot';
 
-      if (productMatch) {
-        productName = productMatch[1].trim();
-        price = productMatch[2] ? parseFloat(productMatch[2]) : 0;
-        console.log(`📝 Parsed from main pattern: name="${productName}", price=${price}`);
+      if (advancedMatch) {
+        // Advanced parsing with all parameters
+        productName = advancedMatch[1].trim().replace(/^["']|["']$/g, ''); // Remove quotes
+        price = parseFloat(advancedMatch[2]);
+        stock = advancedMatch[3] ? parseInt(advancedMatch[3]) : 0;
+        category = advancedMatch[4] ? advancedMatch[4].trim().replace(/^["']|["']$/g, '') : '';
+        description = advancedMatch[5] ? advancedMatch[5].trim() : 'Created via SAP Copilot';
+
+        console.log(`📝 Advanced parsed: name="${productName}", price=${price}, stock=${stock}, category="${category}", description="${description}"`);
+      } else if (basicMatch) {
+        // Basic parsing
+        productName = basicMatch[1].trim();
+        price = parseFloat(basicMatch[2]);
+        console.log(`📝 Basic parsed: name="${productName}", price=${price}`);
       } else if (altMatch) {
         // Try to extract name and price from alternative pattern
         const fullText = altMatch[1].trim();
@@ -2206,7 +2300,7 @@ Format your response professionally with clear recommendations.`;
           productName = fullText;
           price = 0;
         }
-        console.log(`📝 Parsed from alt pattern: name="${productName}", price=${price}`);
+        console.log(`📝 Alternative parsed: name="${productName}", price=${price}`);
       }
 
       if (productName) {
@@ -2230,13 +2324,31 @@ Format your response professionally with clear recommendations.`;
         const maxProduct = await db.run(SELECT.one.from(Products).columns('max(ID) as maxId'));
         const nextId = (maxProduct?.maxId || 0) + 1;
 
+        // Map category name to CategoryID if provided
+        let categoryID = 1; // Default category
+        if (category) {
+          const categoryMap = {
+            'electronics': 1,
+            'food': 2,
+            'beverages': 1,
+            'dairy': 4,
+            'grains': 5,
+            'meat': 6,
+            'produce': 7,
+            'seafood': 8,
+            'condiments': 2,
+            'confections': 3
+          };
+          categoryID = categoryMap[category.toLowerCase()] || 1;
+        }
+
         const newProduct = {
           ID: nextId,
           ProductName: productName,
           UnitPrice: price,
-          UnitsInStock: 0,
-          Description: 'Created via SAP Copilot',
-          CategoryID: 1
+          UnitsInStock: stock,
+          Description: description,
+          CategoryID: categoryID
         };
 
         // Insert into database
@@ -2249,7 +2361,7 @@ Format your response professionally with clear recommendations.`;
         console.log(`🔍 Verification - Product in DB:`, verifyProduct);
 
         return {
-          reply: `✅ **Product Created Successfully!**\n\n📦 **New Product Details:**\n• **ID**: ${nextId}\n• **Name**: ${productName}\n• **Price**: $${price}\n• **Stock**: 0 units\n• **Description**: Created via SAP Copilot\n\n🎉 Product has been added to your catalog and is ready for use!`,
+          reply: `✅ **Product Created Successfully!**\n\n📦 **New Product Details:**\n• **ID**: ${nextId}\n• **Name**: ${productName}\n• **Price**: $${price}\n• **Stock**: ${stock} units\n• **Category ID**: ${categoryID}${category ? ` (${category})` : ''}\n• **Description**: ${description}\n\n🎉 Product has been added to your catalog and is ready for use!`,
           success: true,
           timestamp: new Date().toISOString(),
           processingTime: Date.now() - startTime,
@@ -3053,19 +3165,37 @@ What would you like to explore?`;
           const maxProduct = await db.run(SELECT.one.from(Products).columns('max(ID) as maxId'));
           const nextId = (maxProduct?.maxId || 0) + 1;
 
+          // Map category name to CategoryID if provided
+          let categoryID = transactionDetails.data.CategoryID || 1;
+          if (transactionDetails.data.Category && !transactionDetails.data.CategoryID) {
+            const categoryMap = {
+              'electronics': 1,
+              'food': 2,
+              'beverages': 1,
+              'dairy': 4,
+              'grains': 5,
+              'meat': 6,
+              'produce': 7,
+              'seafood': 8,
+              'condiments': 2,
+              'confections': 3
+            };
+            categoryID = categoryMap[transactionDetails.data.Category.toLowerCase()] || 1;
+          }
+
           const newProduct = {
             ID: nextId,
             ProductName: transactionDetails.data.ProductName || 'New Product',
             UnitPrice: transactionDetails.data.UnitPrice || 0,
-            UnitsInStock: transactionDetails.data.UnitsInStock || 0,
+            UnitsInStock: transactionDetails.data.UnitsInStock || transactionDetails.data.Stock || 0,
             Description: transactionDetails.data.Description || 'Created via SAP Copilot',
-            CategoryID: transactionDetails.data.CategoryID || 1
+            CategoryID: categoryID
           };
 
           result = await db.run(INSERT.into(Products).entries(newProduct));
 
           return {
-            reply: `✅ **Product Created Successfully!**\n\n📦 **New Product Details:**\n• **ID**: ${nextId}\n• **Name**: ${newProduct.ProductName}\n• **Price**: $${newProduct.UnitPrice}\n• **Stock**: ${newProduct.UnitsInStock} units\n• **Description**: ${newProduct.Description}\n\n🎉 Product has been added to your catalog and is ready for use!`,
+            reply: `✅ **Product Created Successfully!**\n\n📦 **New Product Details:**\n• **ID**: ${nextId}\n• **Name**: ${newProduct.ProductName}\n• **Price**: $${newProduct.UnitPrice}\n• **Stock**: ${newProduct.UnitsInStock} units\n• **Category ID**: ${newProduct.CategoryID}${transactionDetails.data.Category ? ` (${transactionDetails.data.Category})` : ''}\n• **Description**: ${newProduct.Description}\n\n🎉 Product has been added to your catalog and is ready for use!`,
             success: true,
             timestamp: new Date().toISOString(),
             processingTime: Date.now() - startTime,
